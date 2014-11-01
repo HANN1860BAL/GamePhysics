@@ -76,9 +76,10 @@ float g_fSphereSize = 0.05f;
 bool  g_bDrawTeapot = false;
 bool  g_bDrawTriangle = false;
 bool  g_bDrawSpheres = true;
-float g_fDamping = 0.0f;
+float g_fDamping = -0.01f;
 float g_fMass = 1.0f;
 float g_fStiffness = 1.0f;
+float g_fTimeStepSize = 0.1f;
 
 
 // Video recorder
@@ -92,12 +93,13 @@ struct Point
 	float f_mass;
 	bool b_Static;
 	bool b_Dummy;
+	int i_id;
 };
 
 struct Spring
 {
-	XMVECTOR i_point1;
-	XMVECTOR i_point2;
+	int i_point1;
+	int i_point2;;
 	float f_stiffness;
 	float f_initLength;
 	float f_currentLength;
@@ -106,7 +108,24 @@ struct Spring
 std::vector<Point> v_point;
 std::vector<Spring> v_spring;
 
-float gravity = 9.81f;
+float f_gravity = -0.981f;
+bool b_start = true;
+static double f_timeAcc;
+
+//Utility
+XMVECTOR GetPositionOfPoint(int id)
+{
+	for (int i = 0; i < v_point.size(); i++)
+	{
+		if (id == v_point[i].i_id)
+			return v_point[i].XMV_position;
+	}
+}
+
+void startNew()
+{
+	b_start = true;
+}
 
 // Create TweakBar and add required buttons and variables
 void InitTweakBar(ID3D11Device* pd3dDevice)
@@ -117,6 +136,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 
 	// HINT: For buttons you can directly pass the callback function as a lambda expression.
 	TwAddButton(g_pTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Restart", [](void *){startNew(); }, nullptr, "");
 
 	//TwAddVarRW(g_pTweakBar, "Draw Teapot",   TW_TYPE_BOOLCPP, &g_bDrawTeapot, "");
 	//TwAddVarRW(g_pTweakBar, "Draw Triangle", TW_TYPE_BOOLCPP, &g_bDrawTriangle, "");
@@ -125,7 +145,8 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, "min=0.01 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Spring Damping", TW_TYPE_FLOAT, &g_fDamping, "min=0.01 step=0.01");
+	TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0.0 step=0.01");
+	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.01 step=0.01");
 }
 
 void InitPoints()
@@ -140,20 +161,22 @@ void InitPoints()
 			Point p_point = Point();
 			p_point.b_Dummy = false;
 			p_point.b_Static = false;
-			XMFLOAT3 XMF3_position = XMFLOAT3((-0.5f - f_distance) + k*f_distance, 0.0f, (-0.5f - f_distance) + i*f_distance);
+			XMFLOAT3 XMF3_position = XMFLOAT3((-0.5f - f_distance) + k*f_distance, 0.5f, (-0.5f - f_distance) + i*f_distance);
 
 			p_point.XMV_position = XMLoadFloat3(&XMF3_position);
 			p_point.XMV_force = XMLoadFloat3(&XMFLOAT3(0.0f, 0.0f, 0.0f));
-			p_point.XMV_velocity = XMLoadFloat3(&XMFLOAT3(0.0f, 0.0f, 0.0f));
+			p_point.XMV_velocity = p_point.XMV_position;
 			p_point.f_mass = g_fMass;
 
 			//set staticflag
-			if (k == 1 || i == 1 || k == g_iNumSpheres - 2 || i == g_iNumSpheres - 2)
+			if (k == 1 || i == 1 || k == g_iNumSpheres || i == g_iNumSpheres)
 				p_point.b_Static = true;
 			//set dummyflag
 			if (k == 0 || i == 0 || k == g_iNumSpheres + 1 || i == g_iNumSpheres + 1)
 				p_point.b_Dummy = true;
 
+			p_point.i_id = i_count;
+			i_count++;
 			v_point.push_back(p_point);
 		}
 	}
@@ -169,31 +192,34 @@ void InitSprings()
 	//set springs to all points except, but not from dummys
 	for (int i = 0; i < v_point.size() - 1; i++){
 		if (!v_point[i].b_Dummy){
-			sp_spring.i_point1 = v_point[i].XMV_position;
-			sp_spring.i_point2 = v_point[i + 1].XMV_position;
+			sp_spring.i_point1 = v_point[i].i_id;
+			sp_spring.i_point2 = v_point[i + 1].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i - 1].XMV_position;
+			sp_spring.i_point2 = v_point[i - 1].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i + g_iNumSpheres + 1].XMV_position;
+			sp_spring.i_point2 = v_point[i + g_iNumSpheres + 1].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i + g_iNumSpheres + 2].XMV_position;
+			sp_spring.i_point2 = v_point[i + g_iNumSpheres + 2].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i + g_iNumSpheres + 3].XMV_position;
+			sp_spring.i_point2 = v_point[i + g_iNumSpheres + 3].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i - g_iNumSpheres - 1].XMV_position;
+			sp_spring.i_point2 = v_point[i - g_iNumSpheres - 1].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i - g_iNumSpheres - 2].XMV_position;
+			sp_spring.i_point2 = v_point[i - g_iNumSpheres - 2].i_id;
 			v_spring.push_back(sp_spring);
-			sp_spring.i_point2 = v_point[i - g_iNumSpheres - 3].XMV_position;
+			sp_spring.i_point2 = v_point[i - g_iNumSpheres - 3].i_id;
 			v_spring.push_back(sp_spring);
 		}
 	}
 
+
+
+	//claculates length of spring
 	for (int i = 0; i < v_spring.size(); i++)
 	{
-		//brakets from in -> out: subtract start- and endposition of spring, calculate length of solution of subtraction, store solution as float in f_initLength
-		XMStoreFloat(&sp_spring.f_initLength, XMVector3Length(XMVectorSubtract(v_spring[i].i_point1, v_spring[i].i_point2)));
-		sp_spring.f_currentLength = sp_spring.f_initLength;
+		//brakets from in -> out: subtract b_start- and endposition of spring, calculate length of solution of subtraction, store solution as float in f_initLength
+		XMStoreFloat(&v_spring[i].f_initLength, XMVector3Length(XMVectorSubtract(GetPositionOfPoint(v_spring[i].i_point1), GetPositionOfPoint(v_spring[i].i_point2))));
+		v_spring[i].f_currentLength = v_spring[i].f_initLength;
 	}
 
 	//delete dummys and their springs
@@ -203,7 +229,7 @@ void InitSprings()
 		{
 			for (int k = 0; k < v_spring.size(); k++)
 			{
-				if (XMVector3Equal(v_point[i].XMV_position, v_spring[k].i_point2))
+				if (v_point[i].i_id == v_spring[k].i_point2)
 				{
 					v_spring.erase(v_spring.begin() + k);
 				}
@@ -216,13 +242,105 @@ void InitSprings()
 	//delete double springs
 	for (int m = 0; m < v_spring.size(); m++){
 		for (int n = 0; n < v_spring.size(); n++){
-			if (XMVector3Equal(v_spring[m].i_point1, v_spring[n].i_point2) && XMVector3Equal(v_spring[m].i_point2, v_spring[n].i_point1)){
+			if (v_spring[m].i_point1 == v_spring[n].i_point2 && v_spring[m].i_point2 == v_spring[n].i_point1){
 				v_spring.erase(v_spring.begin() + n);
 			}
 		}
 	}
 }
 
+void ClearForces()
+{
+	XMFLOAT3 tmp = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	for (int i = 0; i < v_point.size(); i++)
+	{
+		v_point[i].XMV_force = XMLoadFloat3(&tmp);
+	}
+}
+
+void Applygravity()
+{
+	for (int i = 0; i < v_point.size(); i++)
+	{
+
+	}
+}
+
+void ApplyInternalForces()
+{
+	for (int i = 0; i < v_point.size(); i++)
+	{
+		//add internal forces
+		for (int k = 0; k < v_spring.size(); k++)
+		{
+			if (v_point[i].i_id == v_spring[k].i_point1)
+			{
+				v_point[i].XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((v_point[i].XMV_position - GetPositionOfPoint(v_spring[k].i_point2)) / v_spring[k].f_currentLength);
+			}
+
+			if (v_point[i].i_id == v_spring[k].i_point2)
+			{
+				v_point[i].XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((v_point[i].XMV_position - GetPositionOfPoint(v_spring[k].i_point1)) / v_spring[k].f_currentLength);
+			}
+		}
+
+		//apply gravity
+		XMFLOAT3 tmp = XMFLOAT3(0.0f, f_gravity, 0.0f);
+		v_point[i].XMV_force += XMLoadFloat3(&tmp) * v_point[i].f_mass;
+
+		v_point[i].XMV_force /= v_point[i].f_mass;
+		v_point[i].XMV_force *= g_fTimeStepSize*2;
+	}
+}
+
+
+void ApplyDamping()
+{
+	for (int i = 0; i < v_point.size(); i++)
+	{
+
+	}
+}
+
+void ApplyMath()
+{
+	for (int i = 0; i < v_point.size(); i++)
+	{
+
+	}
+}
+
+void CalculateCurrentLength()
+{
+	for (int i = 0; i < v_spring.size(); i++)
+	{
+		//brakets from in -> out: subtract b_start- and endposition of spring, calculate length of solution of subtraction, store solution as float in f_initLength
+		XMStoreFloat(&v_spring[i].f_currentLength, XMVector3Length(XMVectorSubtract(GetPositionOfPoint(v_spring[i].i_point1), GetPositionOfPoint(v_spring[i].i_point2))));
+	}
+}
+
+void ApplyPhysik()
+{
+	ApplyInternalForces();
+	XMFLOAT3 tmp;
+	for (int i = 0; i < v_point.size(); i++)
+	{
+		if (!v_point[i].b_Static)
+		{
+			v_point[i].XMV_position += v_point[i].XMV_force;
+			//XMStoreFloat3(&tmp, v_point[i].XMV_force);
+			//std::cout << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+			v_point[i].XMV_velocity = (v_point[i].XMV_velocity - v_point[i].XMV_position) / g_fTimeStepSize;
+			//apply damping
+			v_point[i].XMV_force += g_fDamping * v_point[i].XMV_velocity * g_fTimeStepSize;
+			//XMStoreFloat3(&tmp, v_point[i].XMV_position);
+			//if (tmp.y <= 0.0f)
+			//	tmp.y = 0;
+			//v_point[i].XMV_position = XMLoadFloat3(&tmp);
+		}
+	}
+	CalculateCurrentLength();
+}
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
 // (Drawn as line primitives using a DirectXTK primitive batch)
@@ -284,7 +402,7 @@ void DrawFloor(ID3D11DeviceContext* pd3dImmediateContext)
 	// Draw 4*n*n quads spanning x = [-n;n], y = -1, z = [-n;n]
 	const float n = 4;
 	XMVECTOR normal = XMVectorSet(0, 1, 0, 0);
-	XMVECTOR planecenter = XMVectorSet(0, -1, 0, 0);
+	XMVECTOR planecenter = XMVectorSet(0, -2, 0, 0);
 
 	g_pPrimitiveBatchPositionNormalColor->Begin();
 	for (float z = -n; z < n; z++)
@@ -385,33 +503,12 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 	g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
 	g_pEffectPositionNormal->SetSpecularPower(100);
 
-	InitPoints();
+	if (b_start){
+		InitPoints();
 
-	InitSprings();
-
-	//code dient nur testzwecken
-	//XMFLOAT3 tmp;
-	//XMStoreFloat3(&tmp, v_point[12].XMV_position);
-	//for (int i = 0; i < v_spring.size(); i++)
-	//{
-	//	if (XMVector3Equal(v_point[12].XMV_position, v_spring[i].i_point1))
-	//	{
-	//		XMFLOAT3 tmp;
-	//		XMStoreFloat3(&tmp, v_spring[i].i_point1);
-	//		tmp.y -= 0.1f;
-	//		v_spring[i].i_point1 = XMLoadFloat3(&tmp);
-	//	}
-	//	if (XMVector3Equal(v_point[12].XMV_position, v_spring[i].i_point2))
-	//	{
-	//		XMFLOAT3 tmp;
-	//		XMStoreFloat3(&tmp, v_spring[i].i_point2);
-	//		tmp.y -= 0.1f;
-	//		v_spring[i].i_point2 = XMLoadFloat3(&tmp);
-	//	}
-	//}
-
-	//tmp.y -= 0.1f;
-	//v_point[12].XMV_position = XMLoadFloat3(&tmp);
+		InitSprings();
+	}
+	b_start = false;
 
 	for (int i = 0; i < v_point.size(); i++)
 	{
@@ -437,12 +534,11 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 
 	for (int i = 0; i < v_spring.size(); i++){
 		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(v_spring[i].i_point1, Colors::Green),
-			VertexPositionColor(v_spring[i].i_point2, Colors::Green));
+			VertexPositionColor(GetPositionOfPoint(v_spring[i].i_point1), Colors::Green),
+			VertexPositionColor(GetPositionOfPoint(v_spring[i].i_point2), Colors::Green));
 	}
 	g_pPrimitiveBatchPositionColor->End();
 }
-
 
 // ============================================================
 // DXUT Callbacks
@@ -750,6 +846,14 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 		// Reset accumulated mouse deltas
 		g_viMouseDelta = XMINT2(0, 0);
 	}
+
+	f_timeAcc += fElapsedTime;
+	while (f_timeAcc > g_fTimeStepSize)
+	{
+		ApplyPhysik();
+		f_timeAcc -= g_fTimeStepSize;
+	}
+
 }
 
 //--------------------------------------------------------------------------------------
