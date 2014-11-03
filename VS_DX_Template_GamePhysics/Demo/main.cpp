@@ -76,11 +76,16 @@ float g_fSphereSize = 0.05f;
 bool  g_bDrawTeapot = false;
 bool  g_bDrawTriangle = false;
 bool  g_bDrawSpheres = true;
-float g_fDamping = -0.01f;
+float g_fDamping = -0.1f;
 float g_fMass = 1.0f;
-float g_fStiffness = 1.0f;
+float g_fStiffness = 10.0f;
 float g_fTimeStepSize = 0.1f;
-
+bool g_bClearForce = true;
+bool g_bEuler = false;
+bool g_bMidpoint = false;
+bool g_bRungeKutta = false;
+bool g_bFloorCollsion = false;
+bool g_bSphereCollsion = true;
 
 // Video recorder
 FFmpeg* g_pFFmpegVideoRecorder = nullptr;
@@ -122,9 +127,73 @@ XMVECTOR GetPositionOfPoint(int id)
 	}
 }
 
-void startNew()
+void Reset()
 {
 	b_start = true;
+	g_bEuler = false;
+	g_bMidpoint = false;
+	g_bRungeKutta = false;
+}
+
+void SetEuler()
+{
+	g_bEuler = true;
+	g_bMidpoint = false;
+	g_bRungeKutta = false;
+}
+
+void SetMidpoint()
+{
+	g_bMidpoint = true;
+	g_bEuler = false;
+	g_bRungeKutta = false;
+}
+
+void SetRungeKutta()
+{
+	g_bRungeKutta = true;
+	g_bMidpoint = false;
+	g_bEuler = false;
+}
+
+void SetStiffness(float f_stiffness)
+{
+	if (v_spring[0].f_stiffness != f_stiffness){
+		for (int i = 0; i < v_spring.size(); i++)
+		{
+			v_spring[i].f_stiffness = f_stiffness;
+		}
+	}
+}
+
+void SetMass(float f_mass)
+{
+	if (v_point[0].f_mass != f_mass)
+	{
+		for (int i = 0; i < v_point.size(); i++)
+		{
+			v_point[i].f_mass = f_mass;
+		}
+	}
+}
+
+float RandomBetween(float smallNumber, float bigNumber)
+{
+	float diff = bigNumber - smallNumber;
+	return (((float)rand() / RAND_MAX) * diff) + smallNumber;
+}
+
+void randomPosition()
+{
+	int i = (int)RandomBetween(0, (int)v_point.size() - 1);
+	if (!v_point[i].b_Static)
+	{
+		XMFLOAT3 XMF_tmp;
+		XMStoreFloat3(&XMF_tmp, v_point[i].XMV_position);
+		XMF_tmp.y += RandomBetween(-0.5f, 0.5f);
+		v_point[i].XMV_position = XMLoadFloat3(&XMF_tmp);
+	}
+	else randomPosition();
 }
 
 // Create TweakBar and add required buttons and variables
@@ -136,11 +205,16 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 
 	// HINT: For buttons you can directly pass the callback function as a lambda expression.
 	TwAddButton(g_pTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
-	TwAddButton(g_pTweakBar, "Restart", [](void *){startNew(); }, nullptr, "");
-
+	TwAddButton(g_pTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Euler", [](void *){SetEuler(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "RungeKutta", [](void *){SetRungeKutta(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Random position", [](void *){randomPosition(); }, nullptr, "");
 	//TwAddVarRW(g_pTweakBar, "Draw Teapot",   TW_TYPE_BOOLCPP, &g_bDrawTeapot, "");
 	//TwAddVarRW(g_pTweakBar, "Draw Triangle", TW_TYPE_BOOLCPP, &g_bDrawTriangle, "");
 	TwAddVarRW(g_pTweakBar, "Draw Spheres", TW_TYPE_BOOLCPP, &g_bDrawSpheres, "");
+	TwAddVarRW(g_pTweakBar, "Floor Collsions", TW_TYPE_BOOLCPP, &g_bFloorCollsion, "");
+	TwAddVarRW(g_pTweakBar, "Sphere Collsions", TW_TYPE_BOOLCPP, &g_bSphereCollsion, "");
 	TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
 	TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
@@ -251,63 +325,100 @@ void InitSprings()
 
 void ClearForces()
 {
-	XMFLOAT3 tmp = XMFLOAT3(0.0f, 0.0f, 0.0f);
 	for (int i = 0; i < v_point.size(); i++)
 	{
-		v_point[i].XMV_force = XMLoadFloat3(&tmp);
+		v_point[i].XMV_force = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 }
 
-void Applygravity()
+void CollisionDetection()
 {
 	for (int i = 0; i < v_point.size(); i++)
 	{
-
-	}
-}
-
-void ApplyInternalForces()
-{
-	for (int i = 0; i < v_point.size(); i++)
-	{
-		//add internal forces
-		for (int k = 0; k < v_spring.size(); k++)
+		for (int k = 0; k < v_point.size(); k++)
 		{
-			if (v_point[i].i_id == v_spring[k].i_point1)
+			float f_tmp;
+			XMStoreFloat(&f_tmp, XMVector3Length(v_point[i].XMV_position - v_point[k].XMV_position));
+			if (f_tmp < 2 * g_fSphereSize)
 			{
-				v_point[i].XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((v_point[i].XMV_position - GetPositionOfPoint(v_spring[k].i_point2)) / v_spring[k].f_currentLength);
-			}
-
-			if (v_point[i].i_id == v_spring[k].i_point2)
-			{
-				v_point[i].XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((v_point[i].XMV_position - GetPositionOfPoint(v_spring[k].i_point1)) / v_spring[k].f_currentLength);
+				f_tmp = 2 * g_fSphereSize - f_tmp;
+				v_point[i].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(f_tmp / 2);
+				v_point[k].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(-f_tmp / 2);
 			}
 		}
-
-		//apply gravity
-		XMFLOAT3 tmp = XMFLOAT3(0.0f, f_gravity, 0.0f);
-		v_point[i].XMV_force += XMLoadFloat3(&tmp) * v_point[i].f_mass;
-
-		v_point[i].XMV_force /= v_point[i].f_mass;
-		v_point[i].XMV_force *= g_fTimeStepSize*2;
 	}
 }
 
-
-void ApplyDamping()
+XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 {
-	for (int i = 0; i < v_point.size(); i++)
-	{
+	//p_point->XMV_force = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
 
+	//apply gravity
+	p_point->XMV_force += XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) * p_point->f_mass;
+
+	//add internal forces
+	for (int k = 0; k < v_spring.size(); k++)
+	{
+		if (p_point->i_id == v_spring[k].i_point1)
+		{
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point2)) / v_spring[k].f_currentLength);
+		}
+
+		if (p_point->i_id == v_spring[k].i_point2)
+		{
+			p_point->XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point1)) / v_spring[k].f_currentLength);
+		}
 	}
+
+	p_point->XMV_force /= p_point->f_mass;
+	p_point->XMV_force *= pow(f_timeStep, 2);
+
+	XMVECTOR XMV_newPosition = p_point->XMV_position + p_point->XMV_force;
+
+	//apply damping
+	p_point->XMV_velocity = (p_point->XMV_position - XMV_newPosition) / f_timeStep;
+	p_point->XMV_force += g_fDamping * p_point->XMV_velocity * f_timeStep;
+
+	return p_point->XMV_force;
+
+	//XMFLOAT3 tmp;
+	//XMStoreFloat3(&tmp, p_point->XMV_force);
+	//std::cout << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
 }
 
-void ApplyMath()
+XMVECTOR UseRungeKuttaIntegration(Point* p_point, float f_timeStep)
 {
-	for (int i = 0; i < v_point.size(); i++)
-	{
+	//apply gravity
+	p_point->XMV_force += XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) * p_point->f_mass;
 
+	//add internal forces
+	for (int k = 0; k < v_spring.size(); k++)
+	{
+		if (p_point->i_id == v_spring[k].i_point1)
+		{
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point2)) / v_spring[k].f_currentLength);
+		}
+
+		if (p_point->i_id == v_spring[k].i_point2)
+		{
+			p_point->XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point1)) / v_spring[k].f_currentLength);
+		}
 	}
+
+	p_point->XMV_force /= p_point->f_mass;
+	p_point->XMV_force *= pow(f_timeStep, 2);
+
+	XMVECTOR XMV_newPosition = p_point->XMV_position + p_point->XMV_force;
+
+	//apply damping
+	p_point->XMV_velocity = (p_point->XMV_position - XMV_newPosition) / f_timeStep;
+	p_point->XMV_force += g_fDamping * p_point->XMV_velocity * f_timeStep;
+
+	//XMFLOAT3 tmp;
+	//XMStoreFloat3(&tmp, p_point->XMV_force);
+	//std::cout << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+
+	return p_point->XMV_force;
 }
 
 void CalculateCurrentLength()
@@ -321,26 +432,72 @@ void CalculateCurrentLength()
 
 void ApplyPhysik()
 {
-	ApplyInternalForces();
-	XMFLOAT3 tmp;
-	for (int i = 0; i < v_point.size(); i++)
+	if (g_bEuler)
 	{
-		if (!v_point[i].b_Static)
+		for (int i = 0; i < v_point.size(); i++)
 		{
-			v_point[i].XMV_position += v_point[i].XMV_force;
-			//XMStoreFloat3(&tmp, v_point[i].XMV_force);
-			//std::cout << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
-			v_point[i].XMV_velocity = (v_point[i].XMV_velocity - v_point[i].XMV_position) / g_fTimeStepSize;
-			//apply damping
-			v_point[i].XMV_force += g_fDamping * v_point[i].XMV_velocity * g_fTimeStepSize;
-			//XMStoreFloat3(&tmp, v_point[i].XMV_position);
-			//if (tmp.y <= 0.0f)
-			//	tmp.y = 0;
-			//v_point[i].XMV_position = XMLoadFloat3(&tmp);
+			UseEulerIntegration(&v_point[i], g_fTimeStepSize);
 		}
 	}
-	CalculateCurrentLength();
+	if (g_bMidpoint)
+	{
+		XMVECTOR XMV_k1;
+		XMVECTOR XMV_k2;
+		XMVECTOR XMV_tmp;
+
+		for (int i = 0; i < v_point.size(); i++)
+		{
+			XMV_tmp = v_point[i].XMV_force;
+			XMV_k1 = UseEulerIntegration(&v_point[i], g_fTimeStepSize / 2);
+			v_point[i].XMV_force = XMV_tmp + XMV_k1;
+			XMV_k2 = UseEulerIntegration(&v_point[i], g_fTimeStepSize);
+			v_point[i].XMV_force = XMV_tmp + XMV_k2;
+		}
+	}
+	if (g_bRungeKutta)
+	{
+		XMVECTOR XMV_k1;
+		XMVECTOR XMV_k2;
+		XMVECTOR XMV_k3;
+		XMVECTOR XMV_k4;
+		XMVECTOR XMV_tmp;
+
+		for (int i = 0; i < v_point.size(); i++)
+		{
+			XMV_tmp = v_point[i].XMV_force;
+			XMV_k1 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize);
+			v_point[i].XMV_force = XMV_tmp + XMV_k1;
+			XMV_k2 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize / 2);
+			v_point[i].XMV_force = XMV_tmp + XMV_k2;
+			XMV_k3 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize / 2);
+			v_point[i].XMV_force = XMV_tmp + XMV_k3;
+			XMV_k4 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize);
+			v_point[i].XMV_force = XMV_tmp + (g_fTimeStepSize / 6) * (XMV_k1 + 2 * XMV_k2 + 2 * XMV_k3 + XMV_k4);
+		}
+	}
+	if (g_bEuler || g_bMidpoint || g_bRungeKutta)
+	{
+		if (g_bSphereCollsion)
+			CollisionDetection();
+		XMFLOAT3 tmp;
+		for (int i = 0; i < v_point.size(); i++)
+		{
+			if (!v_point[i].b_Static)
+			{
+				v_point[i].XMV_position += v_point[i].XMV_force;
+				if (g_bFloorCollsion)
+				{
+					XMStoreFloat3(&tmp, v_point[i].XMV_position);
+					if (tmp.y <= -1.0f + g_fSphereSize)
+						tmp.y = -1.0f + g_fSphereSize;
+					v_point[i].XMV_position = XMLoadFloat3(&tmp);
+				}
+			}
+		}
+		CalculateCurrentLength();
+	}
 }
+
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
 // (Drawn as line primitives using a DirectXTK primitive batch)
@@ -850,10 +1007,11 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 	f_timeAcc += fElapsedTime;
 	while (f_timeAcc > g_fTimeStepSize)
 	{
+		SetStiffness(g_fStiffness);
+		SetMass(g_fMass);
 		ApplyPhysik();
 		f_timeAcc -= g_fTimeStepSize;
 	}
-
 }
 
 //--------------------------------------------------------------------------------------
