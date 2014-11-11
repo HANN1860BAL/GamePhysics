@@ -78,8 +78,8 @@ bool  g_bDrawTriangle = false;
 bool  g_bDrawSpheres = true;
 float g_fDamping = -0.1f;
 float g_fMass = 1.0f;
-float g_fStiffness = 10.0f;
-float g_fTimeStepSize = 0.1f;
+float g_fStiffness = 25.0f;
+float g_fTimeStepSize = 0.01f;
 bool g_bClearForce = true;
 bool g_bEuler = false;
 bool g_bMidpoint = false;
@@ -113,17 +113,19 @@ struct Spring
 std::vector<Point> v_point;
 std::vector<Spring> v_spring;
 
-float f_gravity = -0.981f;
+float f_gravity = -9.81f;
 bool b_start = true;
 static double f_timeAcc;
+int i_oldNum = 0;
+int i_newNum = 0;
 
 //Utility
-XMVECTOR GetPositionOfPoint(int id)
+Point GetPointOf(int id)
 {
 	for (int i = 0; i < v_point.size(); i++)
 	{
 		if (id == v_point[i].i_id)
-			return v_point[i].XMV_position;
+			return v_point[i];
 	}
 }
 
@@ -133,6 +135,7 @@ void Reset()
 	g_bEuler = false;
 	g_bMidpoint = false;
 	g_bRungeKutta = false;
+	std::cout << "-----------------------------------------\n";
 }
 
 void SetEuler()
@@ -218,9 +221,9 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
 	TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, "min=0.01 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0.0 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.01 step=0.01");
+	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, "max=50 step=0.01");
+	TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=-1 max=0 step=0.01");
+	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.0001 step=0.0001");
 }
 
 void InitPoints()
@@ -292,7 +295,7 @@ void InitSprings()
 	for (int i = 0; i < v_spring.size(); i++)
 	{
 		//brakets from in -> out: subtract b_start- and endposition of spring, calculate length of solution of subtraction, store solution as float in f_initLength
-		XMStoreFloat(&v_spring[i].f_initLength, XMVector3Length(XMVectorSubtract(GetPositionOfPoint(v_spring[i].i_point1), GetPositionOfPoint(v_spring[i].i_point2))));
+		XMStoreFloat(&v_spring[i].f_initLength, XMVector3Length(XMVectorSubtract(GetPointOf(v_spring[i].i_point1).XMV_position, GetPointOf(v_spring[i].i_point2).XMV_position)));
 		v_spring[i].f_currentLength = v_spring[i].f_initLength;
 	}
 
@@ -351,39 +354,61 @@ void CollisionDetection()
 
 XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 {
-	//p_point->XMV_force = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-
 	//apply gravity
-	p_point->XMV_force += XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) * p_point->f_mass;
+	p_point->XMV_force = XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) * p_point->f_mass;
 
 	//add internal forces
 	for (int k = 0; k < v_spring.size(); k++)
 	{
 		if (p_point->i_id == v_spring[k].i_point1)
 		{
-			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point2)) / v_spring[k].f_currentLength);
+			XMVECTOR f_damping = g_fDamping*(((p_point->XMV_velocity - GetPointOf(v_spring[k].i_point2).XMV_velocity)*(p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position)) / XMVector3Length(p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position));
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * (f_damping + (p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position) / v_spring[k].f_currentLength);
 		}
 
 		if (p_point->i_id == v_spring[k].i_point2)
 		{
-			p_point->XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point1)) / v_spring[k].f_currentLength);
+			XMVECTOR f_damping = g_fDamping*(((p_point->XMV_velocity - GetPointOf(v_spring[k].i_point1).XMV_velocity)*(p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position)) / XMVector3Length(p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position));
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * (f_damping + (p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position) / v_spring[k].f_currentLength);
 		}
 	}
 
-	p_point->XMV_force /= p_point->f_mass;
-	p_point->XMV_force *= pow(f_timeStep, 2);
-
-	XMVECTOR XMV_newPosition = p_point->XMV_position + p_point->XMV_force;
+	p_point->XMV_velocity += (p_point->XMV_force/p_point->f_mass)* f_timeStep;
 
 	//apply damping
-	p_point->XMV_velocity = (p_point->XMV_position - XMV_newPosition) / f_timeStep;
-	p_point->XMV_force += g_fDamping * p_point->XMV_velocity * f_timeStep;
+	//p_point->XMV_velocity += g_fDamping * p_point->XMV_velocity;
 
-	return p_point->XMV_force;
-
+	////apply damping
+	//p_point->XMV_velocity += g_fDamping * XMVectorAbs(p_point->XMV_velocity) * f_timeAcc;
+	//
+	//p_point->XMV_force *= pow(f_timeStep, 2);
+	//
+	//XMVECTOR XMV_newPosition = p_point->XMV_position + p_point->XMV_force;
+	//
+	////apply damping
+	//p_point->XMV_velocity = p_point->XMV_force * f_timeStep;
+	//XMStoreFloat3(&XMF3_damping, g_fDamping *p_point->XMV_velocity *f_timeAcc);
+	//p_point->XMV_force += g_fDamping * p_point->XMV_velocity * f_timeAcc;
+	//
 	//XMFLOAT3 tmp;
+	//
+	//if (truncf(pow(g_iNumSpheres+2, 2) / 2.0f) == p_point->i_id)
+	//{
+	//	//std::cout << "gravity: " << XMF3_gravity.y << "\n";
+	//	std::cout << "internalforce: " << XMF3_internalForce.x << " " << XMF3_internalForce.y << " " << XMF3_internalForce.z << "\n";
+	//	std::cout << "damping: " << XMF3_damping.x << " " << XMF3_damping.y << " " << XMF3_damping.z << "\n";
+	//	XMStoreFloat3(&tmp, p_point->XMV_force);
+	//	std::cout << "Force: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+	//}
+	//
+	//XMFLOAT3 tmp;
+	//XMStoreFloat3(&tmp, p_point->XMV_velocity);
+	//std::cout << "Velocity: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+	//
 	//XMStoreFloat3(&tmp, p_point->XMV_force);
-	//std::cout << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+	//std::cout <<"Force: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+
+	return p_point->XMV_velocity;
 }
 
 XMVECTOR UseRungeKuttaIntegration(Point* p_point, float f_timeStep)
@@ -396,23 +421,21 @@ XMVECTOR UseRungeKuttaIntegration(Point* p_point, float f_timeStep)
 	{
 		if (p_point->i_id == v_spring[k].i_point1)
 		{
-			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point2)) / v_spring[k].f_currentLength);
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position) / v_spring[k].f_currentLength);
 		}
 
 		if (p_point->i_id == v_spring[k].i_point2)
 		{
-			p_point->XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((p_point->XMV_position - GetPositionOfPoint(v_spring[k].i_point1)) / v_spring[k].f_currentLength);
+			p_point->XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position) / v_spring[k].f_currentLength);
 		}
 	}
 
 	p_point->XMV_force /= p_point->f_mass;
 	p_point->XMV_force *= pow(f_timeStep, 2);
 
-	XMVECTOR XMV_newPosition = p_point->XMV_position + p_point->XMV_force;
-
 	//apply damping
-	p_point->XMV_velocity = (p_point->XMV_position - XMV_newPosition) / f_timeStep;
-	p_point->XMV_force += g_fDamping * p_point->XMV_velocity * f_timeStep;
+	p_point->XMV_velocity = p_point->XMV_force * f_timeStep;
+	p_point->XMV_force += g_fDamping * p_point->XMV_force;// p_point->XMV_velocity;
 
 	//XMFLOAT3 tmp;
 	//XMStoreFloat3(&tmp, p_point->XMV_force);
@@ -426,7 +449,7 @@ void CalculateCurrentLength()
 	for (int i = 0; i < v_spring.size(); i++)
 	{
 		//brakets from in -> out: subtract b_start- and endposition of spring, calculate length of solution of subtraction, store solution as float in f_initLength
-		XMStoreFloat(&v_spring[i].f_currentLength, XMVector3Length(XMVectorSubtract(GetPositionOfPoint(v_spring[i].i_point1), GetPositionOfPoint(v_spring[i].i_point2))));
+		XMStoreFloat(&v_spring[i].f_currentLength, XMVector3Length(XMVectorSubtract(GetPointOf(v_spring[i].i_point1).XMV_position, GetPointOf(v_spring[i].i_point2).XMV_position)));
 	}
 }
 
@@ -439,7 +462,7 @@ void ApplyPhysik()
 			UseEulerIntegration(&v_point[i], g_fTimeStepSize);
 		}
 	}
-	if (g_bMidpoint)
+	else if (g_bMidpoint)
 	{
 		XMVECTOR XMV_k1;
 		XMVECTOR XMV_k2;
@@ -447,14 +470,24 @@ void ApplyPhysik()
 
 		for (int i = 0; i < v_point.size(); i++)
 		{
-			XMV_tmp = v_point[i].XMV_force;
+			XMV_tmp = v_point[i].XMV_velocity;
 			XMV_k1 = UseEulerIntegration(&v_point[i], g_fTimeStepSize / 2);
-			v_point[i].XMV_force = XMV_tmp + XMV_k1;
+			v_point[i].XMV_velocity = XMV_tmp + XMV_k1;
 			XMV_k2 = UseEulerIntegration(&v_point[i], g_fTimeStepSize);
-			v_point[i].XMV_force = XMV_tmp + XMV_k2;
+			v_point[i].XMV_velocity = XMV_tmp + XMV_k2;
+
+			//if (i == 4)
+			//{
+			//	XMFLOAT3 tmp;
+			//	XMStoreFloat3(&tmp, v_point[i].XMV_velocity);
+			//	std::cout << "Velocity: "  << tmp.y << "\n";
+
+			//	XMStoreFloat3(&tmp, v_point[i].XMV_force);
+			//	std::cout << "Force: " << tmp.y << "\n";
+			//}
 		}
 	}
-	if (g_bRungeKutta)
+	else if (g_bRungeKutta)
 	{
 		XMVECTOR XMV_k1;
 		XMVECTOR XMV_k2;
@@ -475,6 +508,7 @@ void ApplyPhysik()
 			v_point[i].XMV_force = XMV_tmp + (g_fTimeStepSize / 6) * (XMV_k1 + 2 * XMV_k2 + 2 * XMV_k3 + XMV_k4);
 		}
 	}
+
 	if (g_bEuler || g_bMidpoint || g_bRungeKutta)
 	{
 		if (g_bSphereCollsion)
@@ -484,7 +518,7 @@ void ApplyPhysik()
 		{
 			if (!v_point[i].b_Static)
 			{
-				v_point[i].XMV_position += v_point[i].XMV_force;
+				v_point[i].XMV_position += v_point[i].XMV_velocity;
 				if (g_bFloorCollsion)
 				{
 					XMStoreFloat3(&tmp, v_point[i].XMV_position);
@@ -691,8 +725,8 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 
 	for (int i = 0; i < v_spring.size(); i++){
 		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(GetPositionOfPoint(v_spring[i].i_point1), Colors::Green),
-			VertexPositionColor(GetPositionOfPoint(v_spring[i].i_point2), Colors::Green));
+			VertexPositionColor(GetPointOf(v_spring[i].i_point1).XMV_position, Colors::Green),
+			VertexPositionColor(GetPointOf(v_spring[i].i_point2).XMV_position, Colors::Green));
 	}
 	g_pPrimitiveBatchPositionColor->End();
 }
@@ -1007,6 +1041,13 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 	f_timeAcc += fElapsedTime;
 	while (f_timeAcc > g_fTimeStepSize)
 	{
+		i_newNum = g_iNumSpheres;
+		if (i_newNum != i_oldNum)
+		{
+			InitPoints();
+			InitSprings();
+			i_oldNum = i_newNum;
+		}
 		SetStiffness(g_fStiffness);
 		SetMass(g_fMass);
 		ApplyPhysik();
