@@ -76,16 +76,16 @@ float g_fSphereSize = 0.05f;
 bool  g_bDrawTeapot = false;
 bool  g_bDrawTriangle = false;
 bool  g_bDrawSpheres = true;
-float g_fDamping = -0.1f;
+float g_fDamping = -0.5f;
 float g_fMass = 1.0f;
-float g_fStiffness = 25.0f;
+float g_fStiffness = 10.0f;
 float g_fTimeStepSize = 0.01f;
 bool g_bClearForce = true;
 bool g_bEuler = false;
 bool g_bMidpoint = false;
 bool g_bRungeKutta = false;
 bool g_bFloorCollsion = false;
-bool g_bSphereCollsion = true;
+bool g_bSphereCollsion = false;
 
 // Video recorder
 FFmpeg* g_pFFmpegVideoRecorder = nullptr;
@@ -117,7 +117,7 @@ float f_gravity = -9.81f;
 bool b_start = true;
 static double f_timeAcc;
 int i_oldNum = 0;
-int i_newNum = 0;
+float f_oldSize = 0;
 
 //Utility
 Point GetPointOf(int id)
@@ -221,9 +221,9 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
 	TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, "max=50 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=-1 max=0 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.0001 step=0.0001");
+	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness," ");
+	TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0 step=0.01");
+	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
 }
 
 void InitPoints()
@@ -231,6 +231,12 @@ void InitPoints()
 	v_point.clear();
 
 	float f_distance = 1.0f / (g_iNumSpheres - 1);
+	float f_offSet = -0.5f;
+	if (f_distance < g_fSphereSize * 2)
+	{
+		f_distance = g_fSphereSize * 2;
+		f_offSet -= f_distance;
+	}
 	int i_count = 0;
 	for (int i = 0; i < g_iNumSpheres + 2; i++){
 		for (int k = 0; k < g_iNumSpheres + 2; k++){
@@ -238,11 +244,11 @@ void InitPoints()
 			Point p_point = Point();
 			p_point.b_Dummy = false;
 			p_point.b_Static = false;
-			XMFLOAT3 XMF3_position = XMFLOAT3((-0.5f - f_distance) + k*f_distance, 0.5f, (-0.5f - f_distance) + i*f_distance);
+			XMFLOAT3 XMF3_position = XMFLOAT3((f_offSet - f_distance) + k*f_distance, 0.5f, (f_offSet - f_distance) + i*f_distance);
 
 			p_point.XMV_position = XMLoadFloat3(&XMF3_position);
 			p_point.XMV_force = XMLoadFloat3(&XMFLOAT3(0.0f, 0.0f, 0.0f));
-			p_point.XMV_velocity = p_point.XMV_position;
+			p_point.XMV_velocity = p_point.XMV_force;
 			p_point.f_mass = g_fMass;
 
 			//set staticflag
@@ -362,14 +368,12 @@ XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 	{
 		if (p_point->i_id == v_spring[k].i_point1)
 		{
-			XMVECTOR f_damping = g_fDamping*(((p_point->XMV_velocity - GetPointOf(v_spring[k].i_point2).XMV_velocity)*(p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position)) / XMVector3Length(p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position));
-			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * (f_damping + (p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position) / v_spring[k].f_currentLength);
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position) / v_spring[k].f_currentLength) + g_fDamping * p_point->XMV_velocity;
 		}
 
 		if (p_point->i_id == v_spring[k].i_point2)
 		{
-			XMVECTOR f_damping = g_fDamping*(((p_point->XMV_velocity - GetPointOf(v_spring[k].i_point1).XMV_velocity)*(p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position)) / XMVector3Length(p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position));
-			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * (f_damping + (p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position) / v_spring[k].f_currentLength);
+			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position) / v_spring[k].f_currentLength) + g_fDamping * p_point->XMV_velocity;
 		}
 	}
 
@@ -377,7 +381,7 @@ XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 
 	//apply damping
 	//p_point->XMV_velocity += g_fDamping * p_point->XMV_velocity;
-
+	//
 	////apply damping
 	//p_point->XMV_velocity += g_fDamping * XMVectorAbs(p_point->XMV_velocity) * f_timeAcc;
 	//
@@ -395,10 +399,12 @@ XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 	//if (truncf(pow(g_iNumSpheres+2, 2) / 2.0f) == p_point->i_id)
 	//{
 	//	//std::cout << "gravity: " << XMF3_gravity.y << "\n";
-	//	std::cout << "internalforce: " << XMF3_internalForce.x << " " << XMF3_internalForce.y << " " << XMF3_internalForce.z << "\n";
-	//	std::cout << "damping: " << XMF3_damping.x << " " << XMF3_damping.y << " " << XMF3_damping.z << "\n";
-	//	XMStoreFloat3(&tmp, p_point->XMV_force);
-	//	std::cout << "Force: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+	//	//std::cout << "internalforce: " << XMF3_internalForce.x << " " << XMF3_internalForce.y << " " << XMF3_internalForce.z << "\n";
+	//	//std::cout << "damping: " << XMF3_damping.x << " " << XMF3_damping.y << " " << XMF3_damping.z << "\n";
+	//	//XMStoreFloat3(&tmp, p_point->XMV_force);
+	//	//std::cout << "Force: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
+	//	XMStoreFloat3(&tmp, p_point->XMV_velocity);
+	//	std::cout << "Velocity: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
 	//}
 	//
 	//XMFLOAT3 tmp;
@@ -409,39 +415,6 @@ XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 	//std::cout <<"Force: " << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
 
 	return p_point->XMV_velocity;
-}
-
-XMVECTOR UseRungeKuttaIntegration(Point* p_point, float f_timeStep)
-{
-	//apply gravity
-	p_point->XMV_force += XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) * p_point->f_mass;
-
-	//add internal forces
-	for (int k = 0; k < v_spring.size(); k++)
-	{
-		if (p_point->i_id == v_spring[k].i_point1)
-		{
-			p_point->XMV_force += -v_spring[k].f_stiffness * (v_spring[k].f_currentLength - v_spring[k].f_initLength) * ((p_point->XMV_position - GetPointOf(v_spring[k].i_point2).XMV_position) / v_spring[k].f_currentLength);
-		}
-
-		if (p_point->i_id == v_spring[k].i_point2)
-		{
-			p_point->XMV_force += -v_spring[k].f_stiffness*(v_spring[k].f_currentLength - v_spring[k].f_initLength)*((p_point->XMV_position - GetPointOf(v_spring[k].i_point1).XMV_position) / v_spring[k].f_currentLength);
-		}
-	}
-
-	p_point->XMV_force /= p_point->f_mass;
-	p_point->XMV_force *= pow(f_timeStep, 2);
-
-	//apply damping
-	p_point->XMV_velocity = p_point->XMV_force * f_timeStep;
-	p_point->XMV_force += g_fDamping * p_point->XMV_force;// p_point->XMV_velocity;
-
-	//XMFLOAT3 tmp;
-	//XMStoreFloat3(&tmp, p_point->XMV_force);
-	//std::cout << tmp.x << " " << tmp.y << " " << tmp.z << "\n";
-
-	return p_point->XMV_force;
 }
 
 void CalculateCurrentLength()
@@ -465,26 +438,15 @@ void ApplyPhysik()
 	else if (g_bMidpoint)
 	{
 		XMVECTOR XMV_k1;
-		XMVECTOR XMV_k2;
 		XMVECTOR XMV_tmp;
 
 		for (int i = 0; i < v_point.size(); i++)
 		{
 			XMV_tmp = v_point[i].XMV_velocity;
 			XMV_k1 = UseEulerIntegration(&v_point[i], g_fTimeStepSize / 2);
+			//v_point[i].XMV_velocity = XMV_tmp + XMV_k1;
+			UseEulerIntegration(&v_point[i], g_fTimeStepSize);
 			v_point[i].XMV_velocity = XMV_tmp + XMV_k1;
-			XMV_k2 = UseEulerIntegration(&v_point[i], g_fTimeStepSize);
-			v_point[i].XMV_velocity = XMV_tmp + XMV_k2;
-
-			//if (i == 4)
-			//{
-			//	XMFLOAT3 tmp;
-			//	XMStoreFloat3(&tmp, v_point[i].XMV_velocity);
-			//	std::cout << "Velocity: "  << tmp.y << "\n";
-
-			//	XMStoreFloat3(&tmp, v_point[i].XMV_force);
-			//	std::cout << "Force: " << tmp.y << "\n";
-			//}
 		}
 	}
 	else if (g_bRungeKutta)
@@ -497,15 +459,15 @@ void ApplyPhysik()
 
 		for (int i = 0; i < v_point.size(); i++)
 		{
-			XMV_tmp = v_point[i].XMV_force;
-			XMV_k1 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize);
-			v_point[i].XMV_force = XMV_tmp + XMV_k1;
-			XMV_k2 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize / 2);
-			v_point[i].XMV_force = XMV_tmp + XMV_k2;
-			XMV_k3 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize / 2);
-			v_point[i].XMV_force = XMV_tmp + XMV_k3;
-			XMV_k4 = UseRungeKuttaIntegration(&v_point[i], g_fTimeStepSize);
-			v_point[i].XMV_force = XMV_tmp + (g_fTimeStepSize / 6) * (XMV_k1 + 2 * XMV_k2 + 2 * XMV_k3 + XMV_k4);
+			XMV_tmp = v_point[i].XMV_velocity;
+			XMV_k1 = v_point[i].XMV_velocity; //UseEulerIntegration(&v_point[i], g_fTimeStepSize);
+			//v_point[i].XMV_velocity = XMV_tmp + XMV_k1;
+			XMV_k2 = UseEulerIntegration(&v_point[i], g_fTimeStepSize / 2);
+			//v_point[i].XMV_velocity = XMV_tmp + XMV_k2;
+			XMV_k3 = UseEulerIntegration(&v_point[i], g_fTimeStepSize / 2);
+			//v_point[i].XMV_velocity = XMV_tmp + XMV_k3;
+			XMV_k4 = UseEulerIntegration(&v_point[i], g_fTimeStepSize);
+			v_point[i].XMV_velocity = XMV_tmp + (g_fTimeStepSize / 6.0f) * (XMV_k1 + 2 * XMV_k2 + 2 * XMV_k3 + XMV_k4);
 		}
 	}
 
@@ -519,6 +481,11 @@ void ApplyPhysik()
 			if (!v_point[i].b_Static)
 			{
 				v_point[i].XMV_position += v_point[i].XMV_velocity;
+				//if (truncf(pow(g_iNumSpheres + 2, 2) / 2.0f) == v_point[i].i_id)
+				//{
+				//	XMStoreFloat3(&tmp, v_point[i].XMV_position);
+				//	std::cout << "Position y: " << tmp.y << "\n";
+				//}
 				if (g_bFloorCollsion)
 				{
 					XMStoreFloat3(&tmp, v_point[i].XMV_position);
@@ -1040,13 +1007,13 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 
 	f_timeAcc += fElapsedTime;
 	while (f_timeAcc > g_fTimeStepSize)
-	{
-		i_newNum = g_iNumSpheres;
-		if (i_newNum != i_oldNum)
+	{		
+		if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
 		{
 			InitPoints();
 			InitSprings();
-			i_oldNum = i_newNum;
+			i_oldNum = g_iNumSpheres;
+			f_oldSize = g_fSphereSize;
 		}
 		SetStiffness(g_fStiffness);
 		SetMass(g_fMass);
