@@ -65,6 +65,7 @@ PrimitiveBatch<VertexPositionNormalColor>* g_pPrimitiveBatchPositionNormalColor 
 // DirectXTK simple geometric primitives
 std::unique_ptr<GeometricPrimitive> g_pSphere;
 std::unique_ptr<GeometricPrimitive> g_pTeapot;
+std::unique_ptr<GeometricPrimitive> g_pCube;
 
 // Movable object management
 XMINT2   g_viMouseDelta = XMINT2(0, 0);
@@ -86,6 +87,8 @@ bool g_bMidpoint = false;
 bool g_bRungeKutta = false;
 bool g_bFloorCollsion = false;
 bool g_bSphereCollsion = false;
+bool g_bMassSpringSystem = false;
+bool g_bRigidbody = true;
 
 // Video recorder
 FFmpeg* g_pFFmpegVideoRecorder = nullptr;
@@ -110,8 +113,25 @@ struct Spring
 	float f_currentLength;
 };
 
+struct Box
+{
+	XMVECTOR XMV_position;
+	XMMATRIX XMM_inertiaTensor;
+	XMVECTOR XMV_orientation;
+	XMVECTOR XMV_linearVelocity;
+	XMVECTOR XMV_angularVelocity;
+	std::vector<XMVECTOR> v_XMVPoint;
+	float f_mass;
+	float f_lengthX;
+	float f_lengthY;
+	float f_lengthZ;
+	Box(XMVECTOR XMV_position,float f_mass, float f_lengthX, float f_lengthY, float f_lengthZ)
+		: XMV_position(XMV_position),f_mass(f_mass), f_lengthX(f_lengthX), f_lengthY(f_lengthY), f_lengthZ(f_lengthZ){}
+};
+
 std::vector<Point> v_point;
 std::vector<Spring> v_spring;
+std::vector<Box> v_box;
 
 float f_gravity = -9.81f;
 bool b_start = true;
@@ -157,6 +177,21 @@ void SetRungeKutta()
 	g_bRungeKutta = true;
 	g_bMidpoint = false;
 	g_bEuler = false;
+}
+
+void SetMassSpringSystem()
+{
+	g_bMassSpringSystem = true;
+	g_bRigidbody = false;
+	v_box.clear();
+}
+
+void SetRigidBody()
+{
+	g_bRigidbody = true;
+	g_bMassSpringSystem = false;
+	v_point.clear();
+	v_spring.clear();
 }
 
 void SetStiffness(float f_stiffness)
@@ -208,6 +243,8 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 
 	// HINT: For buttons you can directly pass the callback function as a lambda expression.
 	TwAddButton(g_pTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Mass Spring System", [](void *){SetMassSpringSystem(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Rigidbody Simulation", [](void *){SetRigidBody(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Euler", [](void *){SetEuler(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
@@ -221,7 +258,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
 	TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
-	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness," ");
+	TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, " ");
 	TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0 step=0.01");
 	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
 }
@@ -340,7 +377,7 @@ void ClearForces()
 	}
 }
 
-void CollisionDetection()
+void CollisionDetectionSpheres()
 {
 	for (int i = 0; i < v_point.size(); i++)
 	{
@@ -355,6 +392,27 @@ void CollisionDetection()
 				v_point[k].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(-f_tmp / 2);
 			}
 		}
+	}
+}
+
+void CollisionDetectionRigidbody()
+{
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		XMFLOAT3 tmp;
+		XMStoreFloat3(&tmp, v_box[i].XMV_position);
+		if (tmp.y < -0.5f + v_box[i].f_lengthY / 2.0f)
+			tmp.y = -0.5f + v_box[i].f_lengthY / 2.0f;
+		v_box[i].XMV_position = XMLoadFloat3(&tmp);
+	}
+}
+
+void ApplyGravity()
+{
+	XMVECTOR XMV_gravity = XMVectorSet(0.0f, -9.81f, 0.0f, 0.0f);
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		v_box[i].XMV_position += XMV_gravity * g_fTimeStepSize * 0.01f;
 	}
 }
 
@@ -377,7 +435,7 @@ XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 		}
 	}
 
-	p_point->XMV_velocity += (p_point->XMV_force/p_point->f_mass)* f_timeStep;
+	p_point->XMV_velocity += (p_point->XMV_force / p_point->f_mass)* f_timeStep; //pow(f_timeStep,2);
 
 	//apply damping
 	//p_point->XMV_velocity += g_fDamping * p_point->XMV_velocity;
@@ -426,7 +484,7 @@ void CalculateCurrentLength()
 	}
 }
 
-void ApplyPhysik()
+void ApplyPhysikMSS()
 {
 	if (g_bEuler)
 	{
@@ -445,7 +503,7 @@ void ApplyPhysik()
 			XMV_tmp = v_point[i].XMV_velocity;
 			XMV_k1 = UseEulerIntegration(&v_point[i], g_fTimeStepSize / 2);
 			//v_point[i].XMV_velocity = XMV_tmp + XMV_k1;
-			UseEulerIntegration(&v_point[i], g_fTimeStepSize);
+			XMV_k1 = UseEulerIntegration(&v_point[i], g_fTimeStepSize);
 			v_point[i].XMV_velocity = XMV_tmp + XMV_k1;
 		}
 	}
@@ -474,7 +532,7 @@ void ApplyPhysik()
 	if (g_bEuler || g_bMidpoint || g_bRungeKutta)
 	{
 		if (g_bSphereCollsion)
-			CollisionDetection();
+			CollisionDetectionSpheres();
 		XMFLOAT3 tmp;
 		for (int i = 0; i < v_point.size(); i++)
 		{
@@ -499,6 +557,55 @@ void ApplyPhysik()
 	}
 }
 
+void InitRBS()
+{
+	XMFLOAT3X3 XMF3X3_tmp;
+	
+	Box b_box(XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f), 1.0f, 0.1f, 0.2f, 0.1f);
+	XMFLOAT3 tmp;
+	XMStoreFloat3(&tmp, b_box.XMV_position);
+	XMVECTOR XMV_tmp;
+	
+	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
+	b_box.v_XMVPoint.push_back(XMV_tmp);
+
+	//InertiaTensor
+	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+
+	//compute inverse
+	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
+	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
+	v_box.push_back(b_box);
+
+	b_box = Box(XMVectorSet(0.0f, -0.5f + 0.05f, 0.0f, 0.0f), 1.0f, 0.3f, 0.1f, 0.3f);
+	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
+	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
+	v_box.push_back(b_box);
+}
+
+void ApplyPhysikRBS()
+{
+	
+}
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
 // (Drawn as line primitives using a DirectXTK primitive batch)
@@ -661,12 +768,12 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 	g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
 	g_pEffectPositionNormal->SetSpecularPower(100);
 
-	if (b_start){
+	if (b_start && g_bMassSpringSystem){
 		InitPoints();
 
 		InitSprings();
+		b_start = false;
 	}
-	b_start = false;
 
 	for (int i = 0; i < v_point.size(); i++)
 	{
@@ -697,6 +804,95 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 	}
 	g_pPrimitiveBatchPositionColor->End();
 }
+
+void DrawRigidBody(ID3D11DeviceContext* pd3dImmediateContext)
+{
+	//ToDo
+	//// Setup position/normal effect (constant variables)
+	//g_pEffectPositionNormal->SetEmissiveColor(Colors::Black);
+	//g_pEffectPositionNormal->SetDiffuseColor(0.6f * Colors::Cornsilk);
+	//g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
+	//g_pEffectPositionNormal->SetSpecularPower(100);
+
+	//XMMATRIX scale = XMMatrixScaling(0.5f, 0.5f, 0.5f);
+	//XMMATRIX trans = XMMatrixTranslation(g_vfMovableObjectPos.x, g_vfMovableObjectPos.y, g_vfMovableObjectPos.z);
+	//g_pEffectPositionNormal->SetWorld(scale * trans);
+
+	if (b_start)
+	{
+		InitRBS();
+	}
+
+	// Setup position/color effect
+	g_pEffectPositionColor->SetWorld(g_camera.GetWorldMatrix());
+
+	g_pEffectPositionColor->Apply(pd3dImmediateContext);
+	pd3dImmediateContext->IASetInputLayout(g_pInputLayoutPositionColor);
+
+	// Draw
+	g_pPrimitiveBatchPositionColor->Begin();
+
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		XMFLOAT3 tmp;
+		XMStoreFloat3(&tmp, v_box[i].XMV_position);
+
+		// Lines in x direction (red color)
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f,tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f,tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+
+		// Lines in y direction
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		// Lines in z direction
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+			);
+	}
+		g_pPrimitiveBatchPositionColor->End();		
+}
+
 
 // ============================================================
 // DXUT Callbacks
@@ -747,6 +943,7 @@ HRESULT CALLBACK OnD3D11CreateDevice(ID3D11Device* pd3dDevice, const DXGI_SURFAC
 	// Create DirectXTK geometric primitives for later usage
 	g_pSphere = GeometricPrimitive::CreateGeoSphere(pd3dImmediateContext, 2.0f, 2, false);
 	g_pTeapot = GeometricPrimitive::CreateTeapot(pd3dImmediateContext, 1.5f, 8, false);
+	g_pCube = GeometricPrimitive::CreateCube(pd3dImmediateContext, 0.5f, false);
 
 	// Create effect, input layout and primitive batch for position/color vertices (DirectXTK)
 	{
@@ -827,6 +1024,7 @@ void CALLBACK OnD3D11DestroyDevice(void* pUserContext)
 
 	g_pSphere.reset();
 	g_pTeapot.reset();
+	g_pCube.reset();
 
 	SAFE_DELETE(g_pPrimitiveBatchPositionColor);
 	SAFE_RELEASE(g_pInputLayoutPositionColor);
@@ -1007,17 +1205,24 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 
 	f_timeAcc += fElapsedTime;
 	while (f_timeAcc > g_fTimeStepSize)
-	{		
-		if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
-		{
-			InitPoints();
-			InitSprings();
-			i_oldNum = g_iNumSpheres;
-			f_oldSize = g_fSphereSize;
+	{
+		if (g_bMassSpringSystem){
+			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
+			{
+				InitPoints();
+				InitSprings();
+				i_oldNum = g_iNumSpheres;
+				f_oldSize = g_fSphereSize;
+			}
+			SetStiffness(g_fStiffness);
+			SetMass(g_fMass);
+			ApplyPhysikMSS();
 		}
-		SetStiffness(g_fStiffness);
-		SetMass(g_fMass);
-		ApplyPhysik();
+		if (g_bRigidbody)
+		{
+			ApplyGravity();
+			CollisionDetectionRigidbody();
+		}
 		f_timeAcc -= g_fTimeStepSize;
 	}
 }
@@ -1046,6 +1251,8 @@ void CALLBACK OnD3D11FrameRender(ID3D11Device* pd3dDevice, ID3D11DeviceContext* 
 
 	// Draw speheres
 	if (g_bDrawSpheres) DrawMassSpringSystem(pd3dImmediateContext);
+
+	if (g_bRigidbody) DrawRigidBody(pd3dImmediateContext);
 
 	// Draw movable teapot
 	if (g_bDrawTeapot) DrawMovableTeapot(pd3dImmediateContext);
