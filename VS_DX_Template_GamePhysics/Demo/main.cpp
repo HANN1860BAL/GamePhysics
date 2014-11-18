@@ -401,8 +401,8 @@ void CollisionDetectionRigidbody()
 	{
 		XMFLOAT3 tmp;
 		XMStoreFloat3(&tmp, v_box[i].XMV_position);
-		if (tmp.y < -0.5f + v_box[i].f_lengthY / 2.0f)
-			tmp.y = -0.5f + v_box[i].f_lengthY / 2.0f;
+		if (tmp.y < -0.5f + v_box[i].f_lengthY / 4.0f)
+			tmp.y = -0.5f + v_box[i].f_lengthY / 4.0f;
 		v_box[i].XMV_position = XMLoadFloat3(&tmp);
 	}
 }
@@ -557,15 +557,11 @@ void ApplyPhysikMSS()
 	}
 }
 
-void InitRBS()
+void CalculateCorners(Box b_box)
 {
-	XMFLOAT3X3 XMF3X3_tmp;
-	
-	Box b_box(XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f), 1.0f, 0.1f, 0.2f, 0.1f);
 	XMFLOAT3 tmp;
 	XMStoreFloat3(&tmp, b_box.XMV_position);
 	XMVECTOR XMV_tmp;
-	
 	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
 	b_box.v_XMVPoint.push_back(XMV_tmp);
 	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
@@ -582,23 +578,49 @@ void InitRBS()
 	b_box.v_XMVPoint.push_back(XMV_tmp);
 	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
 	b_box.v_XMVPoint.push_back(XMV_tmp);
+}
+
+void InitRBS()
+{
+	v_box.clear();
+
+	Box b_box(XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f), 1.0f, 0.1f, 0.2f, 0.1f);
+	XMFLOAT3X3 XMF3X3_tmp;	
 
 	//InertiaTensor
 	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
 	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
 	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
-
+	
 	//compute inverse
 	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
 	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
+
+	CalculateCorners(b_box);
 	v_box.push_back(b_box);
 
 	b_box = Box(XMVectorSet(0.0f, -0.5f + 0.05f, 0.0f, 0.0f), 1.0f, 0.3f, 0.1f, 0.3f);
+
 	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
 	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
 	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+
 	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
 	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
+
+	CalculateCorners(b_box);
+	v_box.push_back(b_box);
+
+	b_box = Box(XMVectorSet(0.3f, 0.4f, 0.2f, 0.0f), 1.0f, 0.2f, 0.2f, 0.2f);
+
+	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+
+	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
+	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
+
+	CalculateCorners(b_box);
 	v_box.push_back(b_box);
 }
 
@@ -808,89 +830,96 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 void DrawRigidBody(ID3D11DeviceContext* pd3dImmediateContext)
 {
 	//ToDo
-	//// Setup position/normal effect (constant variables)
-	//g_pEffectPositionNormal->SetEmissiveColor(Colors::Black);
-	//g_pEffectPositionNormal->SetDiffuseColor(0.6f * Colors::Cornsilk);
-	//g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
-	//g_pEffectPositionNormal->SetSpecularPower(100);
-
-	//XMMATRIX scale = XMMatrixScaling(0.5f, 0.5f, 0.5f);
-	//XMMATRIX trans = XMMatrixTranslation(g_vfMovableObjectPos.x, g_vfMovableObjectPos.y, g_vfMovableObjectPos.z);
-	//g_pEffectPositionNormal->SetWorld(scale * trans);
+	// Setup position/normal effect (constant variables)
+	g_pEffectPositionNormal->SetEmissiveColor(Colors::Black);
+	g_pEffectPositionNormal->SetDiffuseColor(0.6f * Colors::Cornsilk);
+	g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
+	g_pEffectPositionNormal->SetSpecularPower(100);
 
 	if (b_start)
 	{
 		InitRBS();
+		b_start = false;
 	}
-
-	// Setup position/color effect
-	g_pEffectPositionColor->SetWorld(g_camera.GetWorldMatrix());
-
-	g_pEffectPositionColor->Apply(pd3dImmediateContext);
-	pd3dImmediateContext->IASetInputLayout(g_pInputLayoutPositionColor);
-
-	// Draw
-	g_pPrimitiveBatchPositionColor->Begin();
 
 	for (int i = 0; i < v_box.size(); i++)
 	{
 		XMFLOAT3 tmp;
 		XMStoreFloat3(&tmp, v_box[i].XMV_position);
-
-		// Lines in x direction (red color)
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f,tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f,tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-
-		// Lines in y direction
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		// Lines in z direction
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
-		g_pPrimitiveBatchPositionColor->DrawLine(
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
-			VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
-			);
+		XMMATRIX scale = XMMatrixScaling(v_box[i].f_lengthX, v_box[i].f_lengthY, v_box[i].f_lengthZ);
+		XMMATRIX trans = XMMatrixTranslation(tmp.x, tmp.y, tmp.z);
+		g_pEffectPositionNormal->SetWorld(scale * trans);
+		g_pCube->Draw(g_pEffectPositionNormal, g_pInputLayoutPositionNormal);
 	}
-		g_pPrimitiveBatchPositionColor->End();		
+
+	//// Setup position/color effect
+	//g_pEffectPositionColor->SetWorld(g_camera.GetWorldMatrix());
+	//
+	//g_pEffectPositionColor->Apply(pd3dImmediateContext);
+	//pd3dImmediateContext->IASetInputLayout(g_pInputLayoutPositionColor);
+	//
+	//// Draw
+	//g_pPrimitiveBatchPositionColor->Begin();
+	//
+	//for (int i = 0; i < v_box.size(); i++)
+	//{
+	//	XMFLOAT3 tmp;
+	//	XMStoreFloat3(&tmp, v_box[i].XMV_position);
+	//
+	//	// Lines in x direction (red color)
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f,tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f,tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//
+	//	// Lines in y direction
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	// Lines in z direction
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x + v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y + v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//	g_pPrimitiveBatchPositionColor->DrawLine(
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z - v_box[i].f_lengthZ / 2.0f, 1), Colors::Red),
+	//		VertexPositionColor(XMVectorSet(tmp.x - v_box[i].f_lengthX / 2.0f, tmp.y - v_box[i].f_lengthY / 2.0f, tmp.z + v_box[i].f_lengthZ / 2.0f, 1), Colors::Red)
+	//		);
+	//}
+	//	g_pPrimitiveBatchPositionColor->End();		
 }
 
 
