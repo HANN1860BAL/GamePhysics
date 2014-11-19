@@ -35,6 +35,7 @@ using namespace DirectX;
 #include "util/FFmpeg.h"
 
 #include <vector>
+#include "util/collisionDetect.h"
 
 // DXUT camera
 // NOTE: CModelViewerCamera does not only manage the standard view transformation/camera position 
@@ -89,6 +90,8 @@ bool g_bFloorCollsion = false;
 bool g_bSphereCollsion = false;
 bool g_bMassSpringSystem = false;
 bool g_bRigidbody = true;
+bool g_bInteractionLeft = false;
+bool g_bInteractionRight = false;
 
 // Video recorder
 FFmpeg* g_pFFmpegVideoRecorder = nullptr;
@@ -113,6 +116,13 @@ struct Spring
 	float f_currentLength;
 };
 
+struct Corner
+{
+	XMVECTOR XMV_position;
+	XMVECTOR XMV_velocity;
+	XMVECTOR XMV_force;
+};
+
 struct Box
 {
 	XMVECTOR XMV_position;
@@ -120,13 +130,17 @@ struct Box
 	XMVECTOR XMV_orientation;
 	XMVECTOR XMV_linearVelocity;
 	XMVECTOR XMV_angularVelocity;
-	std::vector<XMVECTOR> v_XMVPoint;
+	XMVECTOR XMV_angularMomentum;
+	XMVECTOR XMV_forceAccumulator;
+	XMVECTOR XMV_torqueAccumulator;
+	XMMATRIX XMM_transform;
+	std::vector<Corner> v_corner;
 	float f_mass;
 	float f_lengthX;
 	float f_lengthY;
 	float f_lengthZ;
-	Box(XMVECTOR XMV_position,float f_mass, float f_lengthX, float f_lengthY, float f_lengthZ)
-		: XMV_position(XMV_position),f_mass(f_mass), f_lengthX(f_lengthX), f_lengthY(f_lengthY), f_lengthZ(f_lengthZ){}
+	Box(XMVECTOR XMV_position, float f_mass, float f_lengthX, float f_lengthY, float f_lengthZ)
+		: XMV_position(XMV_position), f_mass(f_mass), f_lengthX(f_lengthX), f_lengthY(f_lengthY), f_lengthZ(f_lengthZ){}
 };
 
 std::vector<Point> v_point;
@@ -138,6 +152,10 @@ bool b_start = true;
 static double f_timeAcc;
 int i_oldNum = 0;
 float f_oldSize = 0;
+
+XMVECTOR XMV_zero = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+XMMATRIX XMM_zero = XMMatrixSet(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+XMMATRIX XMM_identity = XMMatrixSet(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f);
 
 //Utility
 Point GetPointOf(int id)
@@ -234,6 +252,18 @@ void randomPosition()
 	else randomPosition();
 }
 
+void InteractionLeft()
+{
+	XMFLOAT3 XMF3_tmp = XMFLOAT3(-0.1f, 0.0f, 0.0f);
+	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
+}
+
+void InteractionRight()
+{
+	XMFLOAT3 XMF3_tmp = XMFLOAT3(0.1f, 0.0f, 0.0f);
+	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
+}
+
 // Create TweakBar and add required buttons and variables
 void InitTweakBar(ID3D11Device* pd3dDevice)
 {
@@ -250,6 +280,8 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddButton(g_pTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "RungeKutta", [](void *){SetRungeKutta(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Random position", [](void *){randomPosition(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Interaction left", [](void*){InteractionLeft(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Interaction right", [](void*){InteractionRight(); }, nullptr, "");
 	//TwAddVarRW(g_pTweakBar, "Draw Teapot",   TW_TYPE_BOOLCPP, &g_bDrawTeapot, "");
 	//TwAddVarRW(g_pTweakBar, "Draw Triangle", TW_TYPE_BOOLCPP, &g_bDrawTriangle, "");
 	TwAddVarRW(g_pTweakBar, "Draw Spheres", TW_TYPE_BOOLCPP, &g_bDrawSpheres, "");
@@ -401,9 +433,28 @@ void CollisionDetectionRigidbody()
 	{
 		XMFLOAT3 tmp;
 		XMStoreFloat3(&tmp, v_box[i].XMV_position);
-		if (tmp.y < -0.5f + v_box[i].f_lengthY / 4.0f)
-			tmp.y = -0.5f + v_box[i].f_lengthY / 4.0f;
+		if (tmp.y < -0.5f + v_box[i].f_lengthY / 2.0f)
+			tmp.y = -0.5f + v_box[i].f_lengthY / 2.0f;
 		v_box[i].XMV_position = XMLoadFloat3(&tmp);
+	}
+	XMFLOAT4 XMF4_tmp1;
+	XMFLOAT4 XMF4_tmp2;
+	CollisionInfo col_info;
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		for (int k = 0; k < v_box.size(); k++)
+		{
+			if (i != k)
+			{
+				XMStoreFloat4(&XMF4_tmp1, v_box[i].XMV_position);
+				XMStoreFloat4(&XMF4_tmp2, v_box[k].XMV_position);
+				col_info = checkCollision(XMMatrixTranslation(XMF4_tmp1.x, XMF4_tmp1.y, XMF4_tmp1.z), XMMatrixTranslation(XMF4_tmp2.x, XMF4_tmp2.y, XMF4_tmp2.z), v_box[i].f_lengthX, v_box[i].f_lengthY, v_box[i].f_lengthZ, v_box[k].f_lengthX, v_box[k].f_lengthY, v_box[k].f_lengthZ);
+				if (col_info.isValid)
+				{
+					std::cout << "hit\n";
+				}
+			}
+		}
 	}
 }
 
@@ -413,6 +464,18 @@ void ApplyGravity()
 	for (int i = 0; i < v_box.size(); i++)
 	{
 		v_box[i].XMV_position += XMV_gravity * g_fTimeStepSize * 0.01f;
+		for (int k = 0; k < v_box[i].v_corner.size(); k++)
+		{
+			v_box[i].v_corner[k].XMV_velocity = XMV_gravity * g_fTimeStepSize;
+		}
+		//XMFLOAT4X4 tmp4X4;
+		//XMFLOAT3 tmp3;
+		//XMStoreFloat3(&tmp3, v_box[i].XMV_angularMomentum);
+		//XMStoreFloat4x4(&tmp4X4, v_box[i].XMM_inertiaTensor);
+		//std::cout << "angularMomentum: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
+		//std::cout << "inertiaTensor: " << tmp4X4._11 << " " << tmp4X4._22 << " " << tmp4X4._33 << " " << tmp4X4._44 << "\n";
+		//XMStoreFloat3(&tmp3, v_box[i].XMV_angularVelocity);
+		//std::cout << "angularVelocity: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
 	}
 }
 
@@ -557,76 +620,152 @@ void ApplyPhysikMSS()
 	}
 }
 
-void CalculateCorners(Box b_box)
+void CalculateCorners(Box *b_box)
 {
-	XMFLOAT3 tmp;
-	XMStoreFloat3(&tmp, b_box.XMV_position);
-	XMVECTOR XMV_tmp;
-	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x - b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y - b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z - b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
-	XMV_tmp = XMVectorSet(tmp.x + b_box.f_lengthX / 2, tmp.y + b_box.f_lengthY / 2, tmp.z + b_box.f_lengthZ / 2, 0.0f);
-	b_box.v_XMVPoint.push_back(XMV_tmp);
+	XMFLOAT3 XMF3_tmp;
+	XMStoreFloat3(&XMF3_tmp, b_box->XMV_position);
+	Corner c_corner;
+	c_corner.XMV_velocity = XMV_zero;
+	c_corner.XMV_force = XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) * (b_box->f_mass / b_box->v_corner.size());
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x - b_box->f_lengthX / 2, XMF3_tmp.y - b_box->f_lengthY / 2, XMF3_tmp.z - b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x - b_box->f_lengthX / 2, XMF3_tmp.y - b_box->f_lengthY / 2, XMF3_tmp.z + b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x - b_box->f_lengthX / 2, XMF3_tmp.y + b_box->f_lengthY / 2, XMF3_tmp.z - b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x - b_box->f_lengthX / 2, XMF3_tmp.y + b_box->f_lengthY / 2, XMF3_tmp.z + b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x + b_box->f_lengthX / 2, XMF3_tmp.y - b_box->f_lengthY / 2, XMF3_tmp.z - b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x + b_box->f_lengthX / 2, XMF3_tmp.y - b_box->f_lengthY / 2, XMF3_tmp.z + b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x + b_box->f_lengthX / 2, XMF3_tmp.y + b_box->f_lengthY / 2, XMF3_tmp.z - b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
+	c_corner.XMV_position = XMVectorSet(XMF3_tmp.x + b_box->f_lengthX / 2, XMF3_tmp.y + b_box->f_lengthY / 2, XMF3_tmp.z + b_box->f_lengthZ / 2, 0.0f);
+	b_box->v_corner.push_back(c_corner);
 }
 
 void InitRBS()
 {
 	v_box.clear();
+	XMFLOAT3X3 XMF3X3_inertiaTensor;
 
+	//box1
 	Box b_box(XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f), 1.0f, 0.1f, 0.2f, 0.1f);
-	XMFLOAT3X3 XMF3X3_tmp;	
+	b_box.XMV_orientation = XMV_zero;
+	b_box.XMV_linearVelocity = XMV_zero;
+	b_box.XMV_angularMomentum = XMV_zero;
+	b_box.XMV_forceAccumulator = XMV_zero;
+	b_box.XMV_torqueAccumulator = XMV_zero;
 
-	//InertiaTensor
-	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
-	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
-	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
-	
+	//InertiaTensor	
+	XMF3X3_inertiaTensor._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_inertiaTensor._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_inertiaTensor._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+
 	//compute inverse
-	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
+	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_inertiaTensor);
 	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
 
-	CalculateCorners(b_box);
+	CalculateCorners(&b_box);
+	for (int i = 0; i < b_box.v_corner.size(); i++)
+	{
+		b_box.XMV_angularMomentum += XMVector3Cross(b_box.v_corner[i].XMV_position, (b_box.f_mass / b_box.v_corner.size()) * b_box.v_corner[i].XMV_velocity);
+	}
+
+	//XMFLOAT4X4 tmp4X4;
+	//XMFLOAT3 tmp3;
+	//XMStoreFloat3(&tmp3, b_box.XMV_angularMomentum);
+	//XMStoreFloat4x4(&tmp4X4, b_box.XMM_inertiaTensor);
+	//std::cout << "tmp3: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
+	//std::cout << "tmp4X4: " << tmp4X4._11 << " " << tmp4X4._22 << " " << tmp4X4._33 << " " << tmp4X4._44 << "\n";
+
+	XMFLOAT4 XMF4_tmp;
+	XMStoreFloat4(&XMF4_tmp, XMVector4Transform(b_box.XMV_angularMomentum, b_box.XMM_inertiaTensor));
+	float f_tmp = XMF4_tmp.w;
+	XMF4_tmp.w = XMF4_tmp.z;
+	XMF4_tmp.z = f_tmp;
+	b_box.XMV_angularVelocity = XMLoadFloat4(&XMF4_tmp);
+	//XMStoreFloat3(&tmp3, b_box.XMV_angularVelocity);
+	//std::cout << "tmp3: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
+
 	v_box.push_back(b_box);
 
+	//box2
 	b_box = Box(XMVectorSet(0.0f, -0.5f + 0.05f, 0.0f, 0.0f), 1.0f, 0.3f, 0.1f, 0.3f);
+	b_box.XMV_orientation = XMV_zero;
+	b_box.XMV_linearVelocity = XMV_zero;
+	b_box.XMV_angularMomentum = XMV_zero;
+	b_box.XMV_forceAccumulator = XMV_zero;
+	b_box.XMV_torqueAccumulator = XMV_zero;
 
-	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
-	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
-	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+	XMF3X3_inertiaTensor._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_inertiaTensor._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_inertiaTensor._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
 
-	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
+	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_inertiaTensor);
 	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
 
-	CalculateCorners(b_box);
+	CalculateCorners(&b_box);
+	for (int i = 0; i < b_box.v_corner.size(); i++)
+	{
+		b_box.XMV_angularMomentum += XMVector3Cross(b_box.v_corner[i].XMV_position, (b_box.f_mass / b_box.v_corner.size()) * b_box.v_corner[i].XMV_velocity);
+	}
+
+	XMFLOAT4 XMF4_tmp;
+	XMStoreFloat4(&XMF4_tmp, XMVector4Transform(b_box.XMV_angularMomentum, b_box.XMM_inertiaTensor));
+	float f_tmp = XMF4_tmp.w;
+	XMF4_tmp.w = XMF4_tmp.z;
+	XMF4_tmp.z = f_tmp;
+	b_box.XMV_angularVelocity = XMLoadFloat4(&XMF4_tmp);
 	v_box.push_back(b_box);
 
+	//box3
 	b_box = Box(XMVectorSet(0.3f, 0.4f, 0.2f, 0.0f), 1.0f, 0.2f, 0.2f, 0.2f);
+	b_box.XMV_orientation = XMV_zero;
+	b_box.XMV_linearVelocity = XMV_zero;
+	b_box.XMV_angularMomentum = XMV_zero;
+	b_box.XMV_forceAccumulator = XMV_zero;
+	b_box.XMV_torqueAccumulator = XMV_zero;
 
-	XMF3X3_tmp._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
-	XMF3X3_tmp._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
-	XMF3X3_tmp._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
+	XMF3X3_inertiaTensor._11 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthY, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_inertiaTensor._22 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthZ, 2));
+	XMF3X3_inertiaTensor._33 = b_box.f_mass / 12.0f *(pow(b_box.f_lengthX, 2) + pow(b_box.f_lengthY, 2));
 
-	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_tmp);
+	b_box.XMM_inertiaTensor = XMLoadFloat3x3(&XMF3X3_inertiaTensor);
 	b_box.XMM_inertiaTensor = XMMatrixInverse(NULL, b_box.XMM_inertiaTensor);
 
-	CalculateCorners(b_box);
+	CalculateCorners(&b_box);
+	for (int i = 0; i < b_box.v_corner.size(); i++)
+	{
+		b_box.XMV_angularMomentum += XMVector3Cross(b_box.v_corner[i].XMV_position, (b_box.f_mass / b_box.v_corner.size()) * b_box.v_corner[i].XMV_velocity);
+	}
+
+	XMFLOAT4 XMF4_tmp;
+	XMStoreFloat4(&XMF4_tmp, XMVector4Transform(b_box.XMV_angularMomentum, b_box.XMM_inertiaTensor));
+	float f_tmp = XMF4_tmp.w;
+	XMF4_tmp.w = XMF4_tmp.z;
+	XMF4_tmp.z = f_tmp;
+	b_box.XMV_angularVelocity = XMLoadFloat4(&XMF4_tmp);
 	v_box.push_back(b_box);
 }
 
 void ApplyPhysikRBS()
 {
-	
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		for (int k = 0; k < v_box[i].v_corner.size(); k++)
+		{
+			v_box[i].XMV_forceAccumulator += v_box[i].v_corner[k].XMV_force;
+			v_box[i].XMV_torqueAccumulator += XMVector3Cross(v_box[i].v_corner[k].XMV_position, v_box[i].v_corner[k].XMV_force);
+		}
+		v_box[i].XMV_position += v_box[i].XMV_linearVelocity * g_fTimeStepSize;
+		v_box[i].XMV_linearVelocity += (v_box[i].XMV_forceAccumulator * g_fTimeStepSize) / v_box[i].f_mass;
+		v_box[i].XMV_orientation += g_fTimeStepSize * XMQuaternionMultiply(v_box[i].XMV_angularVelocity, v_box[i].XMV_orientation);
+		v_box[i].XMV_angularMomentum += v_box[i].XMV_torqueAccumulator * g_fTimeStepSize;
+		v_box[i].XMM_inertiaTensor = XMMatrixRotationQuaternion(v_box[i].XMV_orientation)*v_box[i].XMM_inertiaTensor*XMMatrixTranspose(XMMatrixRotationQuaternion(v_box[i].XMV_orientation));
+		v_box[i].XMV_angularVelocity = XMVector4Transform(v_box[i].XMV_angularMomentum, v_box[i].XMM_inertiaTensor);
+	}
 }
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
@@ -846,7 +985,7 @@ void DrawRigidBody(ID3D11DeviceContext* pd3dImmediateContext)
 	{
 		XMFLOAT3 tmp;
 		XMStoreFloat3(&tmp, v_box[i].XMV_position);
-		XMMATRIX scale = XMMatrixScaling(v_box[i].f_lengthX, v_box[i].f_lengthY, v_box[i].f_lengthZ);
+		XMMATRIX scale = XMMatrixScaling(v_box[i].f_lengthX*2, v_box[i].f_lengthY*2, v_box[i].f_lengthZ*2);
 		XMMATRIX trans = XMMatrixTranslation(tmp.x, tmp.y, tmp.z);
 		g_pEffectPositionNormal->SetWorld(scale * trans);
 		g_pCube->Draw(g_pEffectPositionNormal, g_pInputLayoutPositionNormal);
@@ -1110,7 +1249,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			if (bAltDown) DXUTToggleFullScreen();
 			break;
 		}
-			// F8: Take screenshot
+		// F8: Take screenshot
 		case VK_F8:
 		{
 			// Save current render target as png
@@ -1126,7 +1265,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			std::wcout << L"Screenshot written to " << ss.str() << std::endl;
 			break;
 		}
-			// F10: Toggle video recording
+		// F10: Toggle video recording
 		case VK_F10:
 		{
 			if (!g_pFFmpegVideoRecorder) {
