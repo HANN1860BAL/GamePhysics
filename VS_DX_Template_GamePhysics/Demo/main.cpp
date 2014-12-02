@@ -94,6 +94,10 @@ bool g_bMassSpringSystem = false;
 bool g_bRigidbody = true;
 bool g_bInteractionLeft = false;
 bool g_bInteractionRight = false;
+bool g_bBiab = false;
+bool g_bBiabNaive = false;
+bool g_bBiabKDTree = false;
+bool g_bBiabUniformGrid = false;
 
 
 // Video recorder
@@ -261,6 +265,7 @@ void SetMassSpringSystem()
 {
 	g_bMassSpringSystem = true;
 	g_bRigidbody = false;
+	g_bBiab = false;
 	v_box.clear();
 }
 
@@ -268,8 +273,40 @@ void SetRigidBody()
 {
 	g_bRigidbody = true;
 	g_bMassSpringSystem = false;
+	g_bBiab = false;
 	v_point.clear();
 	v_spring.clear();
+}
+
+void SetBiab()
+{
+	g_bBiab = true;
+	g_bMassSpringSystem = false;
+	g_bRigidbody = false;
+	v_box.clear();
+	v_point.clear();
+	v_spring.clear();
+}
+
+void SetBiabNaive()
+{
+	g_bBiabNaive = true;
+	g_bBiabKDTree = false;
+	g_bBiabUniformGrid = false;
+}
+
+void SetBiabKDTree()
+{
+	g_bBiabNaive = false;
+	g_bBiabKDTree = true;
+	g_bBiabUniformGrid = false;
+}
+
+void SetBiabUniformGrid()
+{
+	g_bBiabNaive = false;
+	g_bBiabKDTree = false;
+	g_bBiabUniformGrid = true;
 }
 
 void SetStiffness(float f_stiffness)
@@ -335,6 +372,10 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddButton(g_pTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Mass Spring System", [](void *){SetMassSpringSystem(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Rigidbody Simulation", [](void *){SetRigidBody(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Balls in a box", [](void *){SetBiab(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Biab: Naive", [](void *){SetBiabNaive(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Biab: KD Tree", [](void *){SetBiabKDTree(); }, nullptr, "");
+	TwAddButton(g_pTweakBar, "Biab: Uniform grid", [](void *){SetBiabUniformGrid(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Euler", [](void *){SetEuler(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
@@ -1176,6 +1217,47 @@ void DrawRigidBody(ID3D11DeviceContext* pd3dImmediateContext)
 	//	g_pPrimitiveBatchPositionColor->End();		
 }
 
+void DrawBiab(ID3D11DeviceContext* pd3dImmediateContext)
+{
+	g_pEffectPositionNormal->SetEmissiveColor(Colors::Black);
+	g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
+	g_pEffectPositionNormal->SetSpecularPower(100);
+
+	if (b_start && g_bBiab){
+		InitPoints();
+
+		b_start = false;
+	}
+
+	for (int i = 0; i < v_point.size(); i++)
+	{
+		//set position in worldspace
+		XMMATRIX XMM_scale = XMMatrixScaling(g_fSphereSize, g_fSphereSize, g_fSphereSize);
+		XMMATRIX XMM_trans = XMMatrixTranslationFromVector(v_point[i].XMV_position);
+		XMMATRIX XMM_sphereWorldMatrix = XMM_scale * XMM_trans * g_camera.GetWorldMatrix();
+
+		g_pEffectPositionNormal->SetWorld(XMM_sphereWorldMatrix);
+
+		if (v_point[i].b_Dummy)
+			g_pEffectPositionNormal->SetDiffuseColor(0.6f * XMColorHSVToRGB(XMVectorSet(0.5, 1, 1, 0)));
+		else
+			g_pEffectPositionNormal->SetDiffuseColor(0.6f * XMColorHSVToRGB(XMVectorSet(1, 1, 1, 0)));
+		g_pSphere->Draw(g_pEffectPositionNormal, g_pInputLayoutPositionNormal);
+	}
+
+	g_pEffectPositionColor->SetWorld(g_camera.GetWorldMatrix());
+
+	g_pEffectPositionColor->Apply(pd3dImmediateContext);
+	pd3dImmediateContext->IASetInputLayout(g_pInputLayoutPositionColor);
+	g_pPrimitiveBatchPositionColor->Begin();
+
+	for (int i = 0; i < v_spring.size(); i++){
+		g_pPrimitiveBatchPositionColor->DrawLine(
+			VertexPositionColor(GetPointOf(v_spring[i].i_point1).XMV_position, Colors::Green),
+			VertexPositionColor(GetPointOf(v_spring[i].i_point2).XMV_position, Colors::Green));
+	}
+	g_pPrimitiveBatchPositionColor->End();
+}
 
 // ============================================================
 // DXUT Callbacks
@@ -1536,7 +1618,11 @@ void CALLBACK OnD3D11FrameRender(ID3D11Device* pd3dDevice, ID3D11DeviceContext* 
 	// Draw speheres
 	if (g_bDrawSpheres) DrawMassSpringSystem(pd3dImmediateContext);
 
+	// Excercise 2: Rigid bodies
 	if (g_bRigidbody) DrawRigidBody(pd3dImmediateContext);
+
+	// Excercise 3: Balls in a box
+	if (g_bBiab) DrawBiab(pd3dImmediateContext);
 
 	// Draw movable teapot
 	if (g_bDrawTeapot) DrawMovableTeapot(pd3dImmediateContext);
