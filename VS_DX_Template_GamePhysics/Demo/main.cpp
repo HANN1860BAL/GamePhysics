@@ -74,36 +74,53 @@ XMINT2   g_viMouseDelta = XMINT2(0, 0);
 XMFLOAT3 g_vfMovableObjectPos = XMFLOAT3(0, 0, 0);
 
 // TweakAntBar GUI variables
+
+//Multiple usage
 int   g_iNumSpheres = 3; //number of spheres in a row
 float g_fSphereSize = 0.05f;
-bool  g_bDrawTeapot = false;
-bool  g_bDrawTriangle = false;
 float g_fDamping = 0.001f;
 float g_fMass = 1.0f;
-float g_fStiffness = 10.0f;
-float g_fTimeStepSize = 0.01f;
-float g_fImpulseConstant = 0.5f;
-bool g_bClearForce = true;
+
+//MassSpringSystem
+bool g_bMassSpringSystem = false;
 bool g_bEuler = false;
 bool g_bMidpoint = false;
 bool g_bRungeKutta = false;
 bool g_bFloorCollsion = false;
 bool g_bSphereCollsion = false;
-bool g_bMassSpringSystem = false;
+float g_fStiffness = 10.0f;
+float g_fTimeStepSize = 0.01f;
+
+//Rigidbody simulation
 bool g_bRigidbody = false;
 bool g_bInteractionLeft = false;
 bool g_bInteractionRight = false;
-bool g_bBiab = true;
+float g_fImpulseConstant = 0.5f;
+
+//Balls in a box
+bool g_bBiab = false;
 bool g_bBiabNaive = false;
 bool g_bBiabKDTree = false;
 bool g_bBiabUniformGrid = false;
 float g_fcollisionScalar = 25.0f;
 
+//Global
+bool b_start = true;
+float f_gravity = -9.81f;
+float f_oldSize = 0;
+static double f_timeAcc;
+int i_oldNum = 0;
+ID3D11Device* pd3dDeviceTweakbar;
 
+//usefull for initialisation
+XMVECTOR XMV_zero = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+XMMATRIX XMM_zero = XMMatrixSet(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+XMMATRIX XMM_identity = XMMatrixSet(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f);
 
 // Video recorder
 FFmpeg* g_pFFmpegVideoRecorder = nullptr;
 
+//Points for MassSpringSystem
 struct Point
 {
 	XMVECTOR XMV_position;
@@ -115,19 +132,7 @@ struct Point
 	int i_id;
 };
 
-struct Ball
-{
-	XMVECTOR XMV_position;
-	XMVECTOR XMV_velocity;
-	int id;
-};
-
-struct Pairs
-{
-	Ball* ba_ballA;
-	Ball* ba_ballB;
-};
-
+//Springs fpr MassSpringSystem
 struct Spring
 {
 	int i_point1;
@@ -137,6 +142,7 @@ struct Spring
 	float f_currentLength;
 };
 
+//corners of Rigidbodys
 struct Corner
 {
 	XMVECTOR XMV_position;
@@ -144,6 +150,7 @@ struct Corner
 	XMVECTOR XMV_force;
 };
 
+//rigidbody boxes
 struct Box
 {
 	XMVECTOR XMV_position;
@@ -164,22 +171,33 @@ struct Box
 		: XMV_position(XMV_position), f_mass(f_mass), f_lengthX(f_lengthX), f_lengthY(f_lengthY), f_lengthZ(f_lengthZ){}
 };
 
+//Balls for MassCollisionDetection
+struct Ball
+{
+	XMVECTOR XMV_position;
+	XMVECTOR XMV_velocity;
+	int id;
+};
+
+//Helpstruct for MassCollisiondetection
+struct Pairs
+{
+	Ball* ba_ballA;
+	Ball* ba_ballB;
+};
+
+//storage for MassSpringSystem
 std::vector<Point> v_point;
 std::vector<Spring> v_spring;
+
+//storage for Rigidbodys
 std::vector<Box> v_box;
+
+//storage for MassCollisionDetection
 std::vector<Ball> v_ball;
 std::vector<std::vector<Ball>> vv_kdtree;
 std::vector<Pairs> v_pairs;
 
-float f_gravity = -9.81f;
-bool b_start = true;
-static double f_timeAcc;
-int i_oldNum = 0;
-float f_oldSize = 0;
-
-XMVECTOR XMV_zero = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-XMMATRIX XMM_zero = XMMatrixSet(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-XMMATRIX XMM_identity = XMMatrixSet(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f);
 
 //Utility
 Point GetPointOf(int id)
@@ -191,6 +209,7 @@ Point GetPointOf(int id)
 	}
 }
 
+//shows XMMATRIX on the console
 void PrintMatrix(XMMATRIX XMM_matrix, std::string s_name)
 {
 	XMFLOAT4X4 XMF4X4_tmp;
@@ -202,6 +221,7 @@ void PrintMatrix(XMMATRIX XMM_matrix, std::string s_name)
 	std::cout << std::setw(15) << XMF4X4_tmp._41 << " " << std::setw(15) << XMF4X4_tmp._42 << " " << std::setw(15) << XMF4X4_tmp._43 << " " << std::setw(15) << XMF4X4_tmp._44 << "\n";
 }
 
+//shows XMVECTOR on the console
 void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 {
 	XMFLOAT4 XMF4_tmp;
@@ -210,6 +230,7 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
 }
 
+//transforms a XMVECTOR(w,x,y,z) to a quaternion(x,y,z,w)
 XMVECTOR VectorToQuaternion(XMVECTOR XMV_vector)
 {
 	XMFLOAT4 XMF4_tmp;
@@ -218,6 +239,7 @@ XMVECTOR VectorToQuaternion(XMVECTOR XMV_vector)
 	return XMV_vector;
 }
 
+//transposes a XMVECTOR and multiplys with itself
 XMMATRIX VectorMulTranspose(XMVECTOR XMV_vector)
 {
 	std::vector<float> v_Ovector;
@@ -248,6 +270,7 @@ XMMATRIX VectorMulTranspose(XMVECTOR XMV_vector)
 		v_Mmatrix[12], v_Mmatrix[13], v_Mmatrix[14], v_Mmatrix[15]);
 }
 
+//Resets the simulation
 void Reset()
 {
 	b_start = true;
@@ -257,6 +280,7 @@ void Reset()
 	std::cout << "-----------------------------------------\n";
 }
 
+//Setter and functions for the twearkbaroptions
 void SetEuler()
 {
 	g_bEuler = true;
@@ -280,6 +304,8 @@ void SetRungeKutta()
 
 void SetMassSpringSystem()
 {
+	b_start = true;
+
 	g_bMassSpringSystem = true;
 	g_bRigidbody = false;
 	g_bBiab = false;
@@ -289,6 +315,8 @@ void SetMassSpringSystem()
 
 void SetRigidBody()
 {
+	b_start = true;
+
 	g_bRigidbody = true;
 	g_bMassSpringSystem = false;
 	g_bBiab = false;
@@ -299,12 +327,14 @@ void SetRigidBody()
 
 void SetBiab()
 {
+	b_start = true;
+
 	g_bBiab = true;
 	g_bMassSpringSystem = false;
 	g_bRigidbody = false;
 	v_box.clear();
 	v_point.clear();
-	v_spring.clear();
+	v_spring.clear();	
 }
 
 void SetBiabNaive()
@@ -380,6 +410,7 @@ void InteractionRight()
 	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
 }
 
+
 // Create TweakBar and add required buttons and variables
 void InitTweakBar(ID3D11Device* pd3dDevice)
 {
@@ -394,6 +425,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddButton(g_pTweakBar, "Balls in a box", [](void *){SetBiab(); }, nullptr, "");
 	TwAddButton(g_pTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
 	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
+	TwAddSeparator(g_pTweakBar, "------------------------", "");
 
 	if (g_bMassSpringSystem)
 	{
@@ -405,7 +437,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 		TwAddVarRW(g_pTweakBar, "Sphere Collsions", TW_TYPE_BOOLCPP, &g_bSphereCollsion, "");
 		TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
 		TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
+		TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.01 step=0.01");
 		TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, " ");
 		TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0 step=0.01");
 	}
@@ -424,11 +456,14 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 		TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
 		TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 		TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "");
+		TwAddVarRW(g_pTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0 step=1");
+		TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=0 max=1");
 	}
 }
 
+
+
+//////////////MASSSPRINGSYSTEM/////////////////////
 void InitPoints()
 {
 	v_point.clear();
@@ -464,28 +499,6 @@ void InitPoints()
 			p_point.i_id = i_count;
 			i_count++;
 			v_point.push_back(p_point);
-		}
-	}
-}
-
-void InitBallsNaive()
-{
-	v_ball.clear();
-	Ball ba_ball;
-	float f_distance = g_fSphereSize * 2;
-	int i_count = 0;
-	for (int i = 0; i < g_iNumSpheres; i++)
-	{
-		for (int k = 0; k < g_iNumSpheres; k++)
-		{
-			for (int l = 0; l < g_iNumSpheres; l++)
-			{
-				ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
-				ba_ball.XMV_velocity = XMV_zero;
-				ba_ball.id = i_count;
-				v_ball.push_back(ba_ball);
-				i_count++;
-			}
 		}
 	}
 }
@@ -557,211 +570,6 @@ void InitSprings()
 	}
 }
 
-void ClearForces()
-{
-	for (int i = 0; i < v_point.size(); i++)
-	{
-		v_point[i].XMV_force = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-}
-
-void CollisionDetectionSpheres()
-{
-	for (int i = 0; i < v_point.size(); i++)
-	{
-		for (int k = 0; k < v_point.size(); k++)
-		{
-			float f_tmp;
-			XMStoreFloat(&f_tmp, XMVector3Length(v_point[i].XMV_position - v_point[k].XMV_position));
-			if (f_tmp < 2 * g_fSphereSize)
-			{
-				f_tmp = 2 * g_fSphereSize - f_tmp;
-				v_point[i].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(f_tmp / 2);
-				v_point[k].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(-f_tmp / 2);
-			}
-		}
-	}
-}
-
-void RestrainingPosition()
-{
-	for (int i = 0; i < v_ball.size(); i++)
-	{
-		//ToDo: change in velocoty instead of position
-		if (XMVectorGetX(v_ball[i].XMV_position) < -0.5f)
-			v_ball[i].XMV_velocity = XMVectorSetX(v_ball[i].XMV_velocity, -XMVectorGetX(v_ball[i].XMV_velocity)) * g_fDamping;
-		if (XMVectorGetX(v_ball[i].XMV_position) > 0.5f)
-			v_ball[i].XMV_velocity = XMVectorSetX(v_ball[i].XMV_velocity, -XMVectorGetX(v_ball[i].XMV_velocity)) * g_fDamping;
-		if (XMVectorGetY(v_ball[i].XMV_position) < -0.5f)
-			v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -XMVectorGetY(v_ball[i].XMV_velocity)) * g_fDamping;
-		if (XMVectorGetY(v_ball[i].XMV_position) > 0.5f)
-			v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -XMVectorGetY(v_ball[i].XMV_velocity)) * g_fDamping;
-		if (XMVectorGetZ(v_ball[i].XMV_position) < -0.5f)
-			v_ball[i].XMV_velocity = XMVectorSetZ(v_ball[i].XMV_velocity, -XMVectorGetZ(v_ball[i].XMV_velocity)) * g_fDamping;
-		if (XMVectorGetZ(v_ball[i].XMV_position) > 0.5f)
-			v_ball[i].XMV_velocity = XMVectorSetZ(v_ball[i].XMV_velocity, -XMVectorGetZ(v_ball[i].XMV_velocity)) * g_fDamping;
-	}
-}
-
-void ApplyGravityToSpheres()
-{
-	for (int i = 0; i < v_ball.size(); i++)
-	{
-		v_ball[i].XMV_velocity += XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) / g_fMass * g_fTimeStepSize  * g_fDamping;
-	}
-}
-
-void SphereCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
-{
-	XMVECTOR XMV_normal = XMVectorSubtract(ba_sphereA->XMV_position, ba_sphereB->XMV_position);
-	float f_impuls = g_fcollisionScalar * (1 - XMVectorGetX(XMVector3Length(XMV_normal)) / (g_fSphereSize * 2));
-	//std::cout << f_impuls << "\n";
-	ba_sphereA->XMV_velocity = ba_sphereA->XMV_velocity + f_impuls * (XMV_normal / g_fMass * g_fDamping);
-	ba_sphereB->XMV_velocity = ba_sphereB->XMV_velocity - f_impuls * (XMV_normal / g_fMass * g_fDamping);
-}
-
-void NaiveCollisionDetection()
-{
-	for (int i = 0; i < v_ball.size(); i++)
-	{
-		// k = i + 1
-		for (int k = 0; k < v_ball.size(); k++)
-		{
-			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ball[i].XMV_position, v_ball[k].XMV_position))) < g_fSphereSize * 2)
-			{
-				SphereCollisionImpuls(&v_ball[i], &v_ball[k]);
-			}
-		}
-		RestrainingPosition();
-	}
-}
-
-void UpdateSpherePosition()
-{
-	for (int i = 0; i < v_ball.size(); i++)
-	{
-		v_ball[i].XMV_position += v_ball[i].XMV_velocity;
-	}
-}
-
-float CalculateImpulse(Box* b_boxA, Box* b_boxB, CollisionInfo col_info)
-{
-	XMVECTOR XMV_velPointA = b_boxA->XMV_linearVelocity + XMVector3Cross(b_boxA->XMV_angularVelocity, col_info.collisionPointWorld);
-	//PrintVector(b_boxA->XMV_linearVelocity, "b_boxA->XMV_linearVelocity");
-	//PrintVector(b_boxA->XMV_angularVelocity, "b_boxA->XMV_angularVelocity");
-	//PrintVector(col_info.collisionPointWorld, "col_info.collisionPointWorld");
-
-	//PrintVector(XMV_velPointA, "VelA");
-	XMVECTOR XMV_velPointB = b_boxB->XMV_linearVelocity + XMVector3Cross(b_boxB->XMV_angularVelocity, col_info.collisionPointWorld);
-	//PrintVector(XMV_velPointB, "VelB");
-	XMVECTOR XMV_velRel = XMV_velPointA - XMV_velPointB;
-	//PrintVector(XMV_velRel, "RelVel");
-
-	XMVECTOR XMV_inertiaInfoA = XMVector3Cross(XMVector4Transform(XMVector3Cross(b_boxA->XMV_position, col_info.normalWorld), b_boxA->XMM_inertiaTensor), b_boxA->XMV_position);
-	XMVECTOR XMV_inertiaInfoB = XMVector3Cross(XMVector4Transform(XMVector3Cross(b_boxB->XMV_position, col_info.normalWorld), b_boxB->XMM_inertiaTensor), b_boxB->XMV_position);
-
-	XMVECTOR XMV_dot1 = XMVector3Dot(XMV_velRel, col_info.normalWorld);
-
-	XMVECTOR XMV_dot2 = XMVector3Dot((XMV_inertiaInfoA + XMV_inertiaInfoB), col_info.normalWorld);
-	//PrintVector(XMV_dot1, "Dot1");
-	//PrintVector(XMV_dot2, "Dot2");
-
-
-	float f_impulse = -((1 + g_fImpulseConstant) * XMVectorGetX(XMV_dot1) / (1 / b_boxA->f_mass + 1 / b_boxB->f_mass + XMVectorGetX(XMV_dot2)));
-	//std::cout << "Impulse: " << f_impulse << "\n";
-	return f_impulse;
-}
-
-void CollisionDetectionRigidbody()
-{
-	for (int i = 0; i < v_box.size(); i++)
-	{
-		XMFLOAT3 tmp;
-		XMStoreFloat3(&tmp, v_box[i].XMV_position);
-		if (tmp.y < -0.5f + v_box[i].f_lengthY / 2.0f)
-		{
-			XMStoreFloat3(&tmp, v_box[i].XMV_linearVelocity);
-			tmp.y = 0.0f;// -f_gravity * v_box[i].f_mass / v_box[i].v_corner.size();
-			v_box[i].XMV_linearVelocity = XMLoadFloat3(&tmp);
-		}
-		/*if (tmp.y > 0.5f + v_box[i].f_lengthY / 2.0f)
-		{
-		tmp.y = 0.5f + v_box[i].f_lengthY / 2.0f;
-		v_box[i].XMV_position = XMLoadFloat3(&tmp);
-		}
-		if (tmp.x < -0.5f + v_box[i].f_lengthX / 2.0f)
-		{
-		tmp.x = -0.5f + v_box[i].f_lengthX / 2.0f;
-		v_box[i].XMV_position = XMLoadFloat3(&tmp);
-		}
-		if (tmp.x > 0.5f + v_box[i].f_lengthX / 2.0f)
-		{
-		tmp.x = 0.5f + v_box[i].f_lengthX / 2.0f;
-		v_box[i].XMV_position = XMLoadFloat3(&tmp);
-		}
-		if (tmp.z < -0.5f + v_box[i].f_lengthZ / 2.0f)
-		{
-		tmp.z = -0.5f + v_box[i].f_lengthZ / 2.0f;
-		v_box[i].XMV_position = XMLoadFloat3(&tmp);
-		}
-		if (tmp.z > 0.5f + v_box[i].f_lengthZ / 2.0f)
-		{
-		tmp.z = 0.5f + v_box[i].f_lengthZ / 2.0f;
-		v_box[i].XMV_position = XMLoadFloat3(&tmp);
-		}*/
-		//std::cout << "x: " << tmp.x << " y: " << tmp.y << " z: " << tmp.z << "\n";
-	}
-	XMFLOAT4 XMF4_tmp1;
-	XMFLOAT4 XMF4_tmp2;
-	CollisionInfo col_info;
-	for (int i = 0; i < v_box.size(); i++)
-	{
-		for (int k = 0; k < v_box.size(); k++)
-		{
-			if (i != k)
-			{
-				XMStoreFloat4(&XMF4_tmp1, v_box[i].XMV_position);
-				XMStoreFloat4(&XMF4_tmp2, v_box[k].XMV_position);
-				col_info = checkCollision(XMMatrixTranslation(XMF4_tmp1.x, XMF4_tmp1.y, XMF4_tmp1.z), XMMatrixTranslation(XMF4_tmp2.x, XMF4_tmp2.y, XMF4_tmp2.z), v_box[i].f_lengthX, v_box[i].f_lengthY, v_box[i].f_lengthZ, v_box[k].f_lengthX, v_box[k].f_lengthY, v_box[k].f_lengthZ);
-				if (col_info.isValid)
-				{
-					XMFLOAT3 XMF3_hitPoint;
-					XMStoreFloat3(&XMF3_hitPoint, col_info.collisionPointWorld);
-					//std::cout << "hit! in " << XMF3_hitPoint.x << ":" << XMF3_hitPoint.y << ":" << XMF3_hitPoint.z << "\n";
-
-					float f_impulse = CalculateImpulse(&v_box[i], &v_box[k], col_info);
-					v_box[i].XMV_linearVelocity = v_box[i].XMV_linearVelocity + f_impulse * col_info.normalWorld / v_box[i].f_mass;
-					v_box[k].XMV_linearVelocity = v_box[k].XMV_linearVelocity - f_impulse * col_info.normalWorld / v_box[k].f_mass;
-
-					v_box[i].XMV_angularMomentum = v_box[i].XMV_angularMomentum + XMVector3Cross(v_box[i].XMV_position, f_impulse * col_info.normalWorld);
-					v_box[k].XMV_angularMomentum = v_box[k].XMV_angularMomentum - XMVector3Cross(v_box[k].XMV_position, f_impulse * col_info.normalWorld);
-				}
-			}
-		}
-	}
-}
-
-void ApplyGravity()
-{
-	XMVECTOR XMV_gravity = XMVectorSet(0.0f, -9.81f, 0.0f, 0.0f);
-	for (int i = 0; i < v_box.size(); i++)
-	{
-		v_box[i].XMV_position += XMV_gravity * g_fTimeStepSize * 0.01f;
-		for (int k = 0; k < v_box[i].v_corner.size(); k++)
-		{
-			v_box[i].v_corner[k].XMV_velocity = XMV_gravity * g_fTimeStepSize;
-		}
-		//XMFLOAT4X4 tmp4X4;
-		//XMFLOAT3 tmp3;
-		//XMStoreFloat3(&tmp3, v_box[i].XMV_angularMomentum);
-		//XMStoreFloat4x4(&tmp4X4, v_box[i].XMM_inertiaTensor);
-		//std::cout << "angularMomentum: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
-		//std::cout << "inertiaTensor: " << tmp4X4._11 << " " << tmp4X4._22 << " " << tmp4X4._33 << " " << tmp4X4._44 << "\n";
-		//XMStoreFloat3(&tmp3, v_box[i].XMV_angularVelocity);
-		//std::cout << "angularVelocity: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
-	}
-}
-
 XMVECTOR UseEulerIntegration(Point* p_point, float f_timeStep)
 {
 	//apply gravity
@@ -827,6 +635,25 @@ void CalculateCurrentLength()
 	{
 		//brakets from in -> out: subtract b_start- and endposition of spring, calculate length of solution of subtraction, store solution as float in f_initLength
 		XMStoreFloat(&v_spring[i].f_currentLength, XMVector3Length(XMVectorSubtract(GetPointOf(v_spring[i].i_point1).XMV_position, GetPointOf(v_spring[i].i_point2).XMV_position)));
+	}
+}
+
+//very simple Collisiondetection for MassSpringSystem
+void CollisionDetectionSpheres()
+{
+	for (int i = 0; i < v_point.size(); i++)
+	{
+		for (int k = 0; k < v_point.size(); k++)
+		{
+			float f_tmp;
+			XMStoreFloat(&f_tmp, XMVector3Length(v_point[i].XMV_position - v_point[k].XMV_position));
+			if (f_tmp < 2 * g_fSphereSize)
+			{
+				f_tmp = 2 * g_fSphereSize - f_tmp;
+				v_point[i].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(f_tmp / 2);
+				v_point[k].XMV_position += XMVector3Normalize(v_point[i].XMV_position - v_point[k].XMV_position)*(-f_tmp / 2);
+			}
+		}
 	}
 }
 
@@ -903,6 +730,9 @@ void ApplyPhysikMSS()
 	}
 }
 
+
+
+/////////////RIGISBODYSIMULATION///////////////////
 void CalculateCorners(Box* b_box)
 {
 	XMFLOAT3 XMF3_tmp;
@@ -1004,6 +834,98 @@ void InitRBS()
 	v_box.push_back(b_box);
 }
 
+float CalculateImpulse(Box* b_boxA, Box* b_boxB, CollisionInfo col_info)
+{
+	XMVECTOR XMV_velPointA = b_boxA->XMV_linearVelocity + XMVector3Cross(b_boxA->XMV_angularVelocity, col_info.collisionPointWorld);
+	//PrintVector(b_boxA->XMV_linearVelocity, "b_boxA->XMV_linearVelocity");
+	//PrintVector(b_boxA->XMV_angularVelocity, "b_boxA->XMV_angularVelocity");
+	//PrintVector(col_info.collisionPointWorld, "col_info.collisionPointWorld");
+
+	//PrintVector(XMV_velPointA, "VelA");
+	XMVECTOR XMV_velPointB = b_boxB->XMV_linearVelocity + XMVector3Cross(b_boxB->XMV_angularVelocity, col_info.collisionPointWorld);
+	//PrintVector(XMV_velPointB, "VelB");
+	XMVECTOR XMV_velRel = XMV_velPointA - XMV_velPointB;
+	//PrintVector(XMV_velRel, "RelVel");
+
+	XMVECTOR XMV_inertiaInfoA = XMVector3Cross(XMVector4Transform(XMVector3Cross(b_boxA->XMV_position, col_info.normalWorld), b_boxA->XMM_inertiaTensor), b_boxA->XMV_position);
+	XMVECTOR XMV_inertiaInfoB = XMVector3Cross(XMVector4Transform(XMVector3Cross(b_boxB->XMV_position, col_info.normalWorld), b_boxB->XMM_inertiaTensor), b_boxB->XMV_position);
+
+	XMVECTOR XMV_dot1 = XMVector3Dot(XMV_velRel, col_info.normalWorld);
+
+	XMVECTOR XMV_dot2 = XMVector3Dot((XMV_inertiaInfoA + XMV_inertiaInfoB), col_info.normalWorld);
+	//PrintVector(XMV_dot1, "Dot1");
+	//PrintVector(XMV_dot2, "Dot2");
+
+
+	float f_impulse = -((1 + g_fImpulseConstant) * XMVectorGetX(XMV_dot1) / (1 / b_boxA->f_mass + 1 / b_boxB->f_mass + XMVectorGetX(XMV_dot2)));
+	//std::cout << "Impulse: " << f_impulse << "\n";
+	return f_impulse;
+}
+
+void CollisionDetectionRigidbody()
+{
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		XMFLOAT3 tmp;
+		XMStoreFloat3(&tmp, v_box[i].XMV_position);
+		if (tmp.y < -0.5f + v_box[i].f_lengthY / 2.0f)
+		{
+			XMStoreFloat3(&tmp, v_box[i].XMV_linearVelocity);
+			tmp.y = 0.0f;// -f_gravity * v_box[i].f_mass / v_box[i].v_corner.size();
+			v_box[i].XMV_linearVelocity = XMLoadFloat3(&tmp);
+		}
+	}
+	XMFLOAT4 XMF4_tmp1;
+	XMFLOAT4 XMF4_tmp2;
+	CollisionInfo col_info;
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		for (int k = 0; k < v_box.size(); k++)
+		{
+			if (i != k)
+			{
+				XMStoreFloat4(&XMF4_tmp1, v_box[i].XMV_position);
+				XMStoreFloat4(&XMF4_tmp2, v_box[k].XMV_position);
+				col_info = checkCollision(XMMatrixTranslation(XMF4_tmp1.x, XMF4_tmp1.y, XMF4_tmp1.z), XMMatrixTranslation(XMF4_tmp2.x, XMF4_tmp2.y, XMF4_tmp2.z), v_box[i].f_lengthX, v_box[i].f_lengthY, v_box[i].f_lengthZ, v_box[k].f_lengthX, v_box[k].f_lengthY, v_box[k].f_lengthZ);
+				if (col_info.isValid)
+				{
+					XMFLOAT3 XMF3_hitPoint;
+					XMStoreFloat3(&XMF3_hitPoint, col_info.collisionPointWorld);
+					//std::cout << "hit! in " << XMF3_hitPoint.x << ":" << XMF3_hitPoint.y << ":" << XMF3_hitPoint.z << "\n";
+
+					float f_impulse = CalculateImpulse(&v_box[i], &v_box[k], col_info);
+					v_box[i].XMV_linearVelocity = v_box[i].XMV_linearVelocity + f_impulse * col_info.normalWorld / v_box[i].f_mass;
+					v_box[k].XMV_linearVelocity = v_box[k].XMV_linearVelocity - f_impulse * col_info.normalWorld / v_box[k].f_mass;
+
+					v_box[i].XMV_angularMomentum = v_box[i].XMV_angularMomentum + XMVector3Cross(v_box[i].XMV_position, f_impulse * col_info.normalWorld);
+					v_box[k].XMV_angularMomentum = v_box[k].XMV_angularMomentum - XMVector3Cross(v_box[k].XMV_position, f_impulse * col_info.normalWorld);
+				}
+			}
+		}
+	}
+}
+
+void ApplyGravityToRigidbodys()
+{
+	XMVECTOR XMV_gravity = XMVectorSet(0.0f, -9.81f, 0.0f, 0.0f);
+	for (int i = 0; i < v_box.size(); i++)
+	{
+		v_box[i].XMV_position += XMV_gravity * g_fTimeStepSize * 0.01f;
+		for (int k = 0; k < v_box[i].v_corner.size(); k++)
+		{
+			v_box[i].v_corner[k].XMV_velocity = XMV_gravity * g_fTimeStepSize;
+		}
+		//XMFLOAT4X4 tmp4X4;
+		//XMFLOAT3 tmp3;
+		//XMStoreFloat3(&tmp3, v_box[i].XMV_angularMomentum);
+		//XMStoreFloat4x4(&tmp4X4, v_box[i].XMM_inertiaTensor);
+		//std::cout << "angularMomentum: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
+		//std::cout << "inertiaTensor: " << tmp4X4._11 << " " << tmp4X4._22 << " " << tmp4X4._33 << " " << tmp4X4._44 << "\n";
+		//XMStoreFloat3(&tmp3, v_box[i].XMV_angularVelocity);
+		//std::cout << "angularVelocity: " << tmp3.x << " " << tmp3.y << " " << tmp3.z << "\n";
+	}
+}
+
 void ApplyPhysikRBS()
 {
 	for (int i = 0; i < v_box.size(); i++)
@@ -1038,6 +960,99 @@ void ApplyPhysikRBS()
 		}
 	}
 }
+
+
+
+//////////////MASSCOLLISIONDETECTION/////////////////
+void InitBalls()
+{
+	v_ball.clear();
+	Ball ba_ball;
+	float f_distance = g_fSphereSize * 2;
+	int i_count = 0;
+	for (int i = 0; i < g_iNumSpheres; i++)
+	{
+		for (int k = 0; k < g_iNumSpheres; k++)
+		{
+			for (int l = 0; l < g_iNumSpheres; l++)
+			{
+				ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
+				ba_ball.XMV_velocity = XMV_zero;
+				ba_ball.id = i_count;
+				v_ball.push_back(ba_ball);
+				i_count++;
+			}
+		}
+	}
+}
+
+//Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
+void RestrainingPosition()
+{
+	for (int i = 0; i < v_ball.size(); i++)
+	{
+		//ToDo: change in velocoty instead of position
+		if (XMVectorGetX(v_ball[i].XMV_position) < -0.5f)
+			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetX(v_ball[i].XMV_velocity, -XMVectorGetX(v_ball[i].XMV_velocity)), g_fDamping);
+		if (XMVectorGetX(v_ball[i].XMV_position) > 0.5f)
+			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetX(v_ball[i].XMV_velocity, -XMVectorGetX(v_ball[i].XMV_velocity)), g_fDamping);
+		if (XMVectorGetY(v_ball[i].XMV_position) < -0.5f)
+			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetY(v_ball[i].XMV_velocity, -XMVectorGetY(v_ball[i].XMV_velocity)), g_fDamping);
+		if (XMVectorGetY(v_ball[i].XMV_position) > 0.5f)
+			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetY(v_ball[i].XMV_velocity, -XMVectorGetY(v_ball[i].XMV_velocity)), g_fDamping);
+		if (XMVectorGetZ(v_ball[i].XMV_position) < -0.5f)
+			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetZ(v_ball[i].XMV_velocity, -XMVectorGetZ(v_ball[i].XMV_velocity)), g_fDamping);
+		if (XMVectorGetZ(v_ball[i].XMV_position) > 0.5f)
+			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetZ(v_ball[i].XMV_velocity, -XMVectorGetZ(v_ball[i].XMV_velocity)), g_fDamping);
+	}
+}
+
+//Apllys gravity to balls
+void ApplyGravityToRigidbodysToBalls()
+{
+	for (int i = 0; i < v_ball.size(); i++)
+	{
+		v_ball[i].XMV_velocity = XMVectorAdd(v_ball[i].XMV_velocity, XMVectorScale(XMVectorScale(XMVectorScale(XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f), 1 / g_fMass), g_fTimeStepSize), g_fDamping));
+			//XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) / g_fMass * g_fTimeStepSize * g_fDamping;
+			//XMVectorScale(XMVectorScale(XMVectorScale(XMVectorAdd(v_ball[i].XMV_velocity, XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f)), 1 / g_fMass), g_fTimeStepSize), g_fDamping);
+	}
+}
+
+//Computes Impuls of BallCollision
+void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
+{
+	XMVECTOR XMV_normal = XMVectorSubtract(ba_sphereA->XMV_position, ba_sphereB->XMV_position);
+	float f_impuls = g_fcollisionScalar * (1 - XMVectorGetX(XMVector3Length(XMV_normal)) / (g_fSphereSize * 2));
+	//std::cout << f_impuls << "\n";
+	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal,1 / g_fMass * g_fDamping * f_impuls));
+	ba_sphereB->XMV_velocity = XMVectorAdd(ba_sphereB->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * -f_impuls));
+}
+
+void NaiveCollisionDetection()
+{
+	for (int i = 0; i < v_ball.size(); i++)
+	{
+		// k = i + 1
+		for (int k = 0; k < v_ball.size(); k++)
+		{
+			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ball[i].XMV_position, v_ball[k].XMV_position))) < g_fSphereSize * 2)
+			{
+				BallCollisionImpuls(&v_ball[i], &v_ball[k]);
+			}
+		}
+		RestrainingPosition();
+	}
+}
+
+void UpdateBallPosition()
+{
+	for (int i = 0; i < v_ball.size(); i++)
+	{
+		v_ball[i].XMV_position = XMVectorAdd(v_ball[i].XMV_position, v_ball[i].XMV_velocity);
+	}
+}
+
+
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
 // (Drawn as line primitives using a DirectXTK primitive batch)
@@ -1200,11 +1215,15 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 	g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
 	g_pEffectPositionNormal->SetSpecularPower(100);
 
-	if (b_start && g_bMassSpringSystem){
+	if (b_start)
+	{
 		InitPoints();
-
 		InitSprings();
 		b_start = false;
+		TwDeleteBar(g_pTweakBar);
+		g_pTweakBar = nullptr;
+		TwTerminate();
+		InitTweakBar(pd3dDeviceTweakbar);
 	}
 
 	for (int i = 0; i < v_point.size(); i++)
@@ -1250,6 +1269,10 @@ void DrawRigidBody(ID3D11DeviceContext* pd3dImmediateContext)
 	{
 		InitRBS();
 		b_start = false;
+		TwDeleteBar(g_pTweakBar);
+		g_pTweakBar = nullptr;
+		TwTerminate();
+		InitTweakBar(pd3dDeviceTweakbar);
 	}
 
 	for (int i = 0; i < v_box.size(); i++)
@@ -1339,10 +1362,14 @@ void DrawBiab(ID3D11DeviceContext* pd3dImmediateContext)
 	g_pEffectPositionNormal->SetSpecularColor(0.4f * Colors::White);
 	g_pEffectPositionNormal->SetSpecularPower(100);
 
-	if (b_start && g_bBiab)
+	if (b_start)
 	{
-		InitBallsNaive();
+		InitBalls();
 		b_start = false;
+		TwDeleteBar(g_pTweakBar);
+		g_pTweakBar = nullptr;
+		TwTerminate();
+		InitTweakBar(pd3dDeviceTweakbar);
 	}
 
 	for (int i = 0; i < v_ball.size(); i++)
@@ -1399,6 +1426,8 @@ HRESULT CALLBACK OnD3D11CreateDevice(ID3D11Device* pd3dDevice, const DXGI_SURFAC
 		std::wcout << L"Failed creating effect with error code " << int(hr) << std::endl;
 		return hr;
 	}
+
+	pd3dDeviceTweakbar = pd3dDevice;
 
 	// Init AntTweakBar GUI
 	InitTweakBar(pd3dDevice);
@@ -1544,7 +1573,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			if (bAltDown) DXUTToggleFullScreen();
 			break;
 		}
-		// F8: Take screenshot
+			// F8: Take screenshot
 		case VK_F8:
 		{
 			// Save current render target as png
@@ -1560,7 +1589,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			std::wcout << L"Screenshot written to " << ss.str() << std::endl;
 			break;
 		}
-		// F10: Toggle video recording
+			// F10: Toggle video recording
 		case VK_F10:
 		{
 			if (!g_pFFmpegVideoRecorder) {
@@ -1681,25 +1710,25 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			SetMass(g_fMass);
 			ApplyPhysikMSS();
 		}
-		if (g_bRigidbody)
+		else if (g_bRigidbody)
 		{
-			//ApplyGravity();
+			//ApplyGravityToRigidbodys();
 			ApplyPhysikRBS();
 			CollisionDetectionRigidbody();
 		}
-		if (g_bBiab)
+		else if (g_bBiab)
 		{
 			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
 			{
-				InitBallsNaive();
+				InitBalls();
 				i_oldNum = g_iNumSpheres;
 				f_oldSize = g_fSphereSize;
 			}
-			ApplyGravityToSpheres();
+			ApplyGravityToRigidbodysToBalls();
 			NaiveCollisionDetection();
-			UpdateSpherePosition();
+			UpdateBallPosition();
 			//RestrainingPosition();
-			//UpdateSpherePosition();
+			//UpdateBallPosition();
 		}
 		f_timeAcc -= g_fTimeStepSize;
 	}
@@ -1735,12 +1764,6 @@ void CALLBACK OnD3D11FrameRender(ID3D11Device* pd3dDevice, ID3D11DeviceContext* 
 
 	// Excercise 3: Balls in a box
 	if (g_bBiab) DrawBiab(pd3dImmediateContext);
-
-	// Draw movable teapot
-	if (g_bDrawTeapot) DrawMovableTeapot(pd3dImmediateContext);
-
-	// Draw simple triangle
-	if (g_bDrawTriangle) DrawTriangle(pd3dImmediateContext);
 
 	// Draw GUI
 	TwDraw();
