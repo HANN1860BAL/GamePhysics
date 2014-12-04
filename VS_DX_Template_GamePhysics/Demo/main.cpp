@@ -334,7 +334,7 @@ void SetBiab()
 	g_bRigidbody = false;
 	v_box.clear();
 	v_point.clear();
-	v_spring.clear();	
+	v_spring.clear();
 }
 
 void SetBiabNaive()
@@ -1008,13 +1008,11 @@ void RestrainingPosition()
 }
 
 //Apllys gravity to balls
-void ApplyGravityToRigidbodysToBalls()
+void ApplyGravityToBalls()
 {
 	for (int i = 0; i < v_ball.size(); i++)
 	{
-		v_ball[i].XMV_velocity = XMVectorAdd(v_ball[i].XMV_velocity, XMVectorScale(XMVectorScale(XMVectorScale(XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f), 1 / g_fMass), g_fTimeStepSize), g_fDamping));
-			//XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f) / g_fMass * g_fTimeStepSize * g_fDamping;
-			//XMVectorScale(XMVectorScale(XMVectorScale(XMVectorAdd(v_ball[i].XMV_velocity, XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f)), 1 / g_fMass), g_fTimeStepSize), g_fDamping);
+		v_ball[i].XMV_velocity = XMVectorAdd(v_ball[i].XMV_velocity, XMVectorScale(XMVectorSet(0.0f, f_gravity, 0.0f, 0.0f), 1 / g_fMass * g_fTimeStepSize * g_fDamping));
 	}
 }
 
@@ -1024,7 +1022,7 @@ void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
 	XMVECTOR XMV_normal = XMVectorSubtract(ba_sphereA->XMV_position, ba_sphereB->XMV_position);
 	float f_impuls = g_fcollisionScalar * (1 - XMVectorGetX(XMVector3Length(XMV_normal)) / (g_fSphereSize * 2));
 	//std::cout << f_impuls << "\n";
-	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal,1 / g_fMass * g_fDamping * f_impuls));
+	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * f_impuls));
 	ba_sphereB->XMV_velocity = XMVectorAdd(ba_sphereB->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * -f_impuls));
 }
 
@@ -1724,7 +1722,7 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 				i_oldNum = g_iNumSpheres;
 				f_oldSize = g_fSphereSize;
 			}
-			ApplyGravityToRigidbodysToBalls();
+			ApplyGravityToBalls();
 			NaiveCollisionDetection();
 			UpdateBallPosition();
 			//RestrainingPosition();
