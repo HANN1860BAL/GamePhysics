@@ -49,7 +49,10 @@ CModelViewerCamera g_camera;
 ID3DX11Effect* g_pEffect = nullptr;
 
 // Main tweak bar
-TwBar* g_pTweakBar;
+TwBar* g_pMainTweakBar;
+
+// Specialized tweak bar
+TwBar* g_pSpecialTweakBar;
 
 // DirectXTK effects, input layouts and primitive batches for different vertex types
 BasicEffect*                               g_pEffectPositionColor = nullptr;
@@ -416,48 +419,57 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 {
 	TwInit(TW_DIRECT3D11, pd3dDevice);
 
-	g_pTweakBar = TwNewBar("TweakBar");
+	g_pMainTweakBar = TwNewBar("Main Menu");
 
 	// HINT: For buttons you can directly pass the callback function as a lambda expression.
-	TwAddButton(g_pTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
-	TwAddButton(g_pTweakBar, "Mass Spring System", [](void *){SetMassSpringSystem(); }, nullptr, "");
-	TwAddButton(g_pTweakBar, "Rigidbody Simulation", [](void *){SetRigidBody(); }, nullptr, "");
-	TwAddButton(g_pTweakBar, "Balls in a box", [](void *){SetBiab(); }, nullptr, "");
-	TwAddButton(g_pTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
-	TwAddVarRW(g_pTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
-	TwAddSeparator(g_pTweakBar, "------------------------", "");
+	TwAddButton(g_pMainTweakBar, "Mass Spring System", [](void *){SetMassSpringSystem(); }, nullptr, "");
+	TwAddButton(g_pMainTweakBar, "Rigidbody Simulation", [](void *){SetRigidBody(); }, nullptr, "");
+	TwAddButton(g_pMainTweakBar, "Balls in a box", [](void *){SetBiab(); }, nullptr, "");
+	TwAddSeparator(g_pMainTweakBar, "SeparatorMain1", "");
+	TwAddButton(g_pMainTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
+	TwAddButton(g_pMainTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
+	TwAddSeparator(g_pMainTweakBar, "SeparatorMain2", "");
+	TwAddVarRW(g_pMainTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
 
 	if (g_bMassSpringSystem)
 	{
-		TwAddButton(g_pTweakBar, "Euler", [](void *){SetEuler(); }, nullptr, "");
-		TwAddButton(g_pTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
-		TwAddButton(g_pTweakBar, "RungeKutta", [](void *){SetRungeKutta(); }, nullptr, "");
-		TwAddButton(g_pTweakBar, "Random position", [](void *){randomPosition(); }, nullptr, "");
-		TwAddVarRW(g_pTweakBar, "Floor Collsions", TW_TYPE_BOOLCPP, &g_bFloorCollsion, "");
-		TwAddVarRW(g_pTweakBar, "Sphere Collsions", TW_TYPE_BOOLCPP, &g_bSphereCollsion, "");
-		TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
-		TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.01 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, " ");
-		TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0 step=0.01");
+		g_pSpecialTweakBar = TwNewBar("Mass Spring System");
+		TwAddButton(g_pSpecialTweakBar, "Euler", [](void *){SetEuler(); }, nullptr, "");
+		TwAddButton(g_pSpecialTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
+		TwAddButton(g_pSpecialTweakBar, "RungeKutta", [](void *){SetRungeKutta(); }, nullptr, "");
+		TwAddSeparator(g_pSpecialTweakBar, "SeparatorMassSpringSystem1", "");
+		TwAddVarRW(g_pSpecialTweakBar, "Floor Collsions", TW_TYPE_BOOLCPP, &g_bFloorCollsion, "");
+		TwAddVarRW(g_pSpecialTweakBar, "Sphere Collsions", TW_TYPE_BOOLCPP, &g_bSphereCollsion, "");
+		TwAddSeparator(g_pSpecialTweakBar, "SeparatorMassSpringSystem2", "");
+		TwAddVarRW(g_pSpecialTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
+		TwAddVarRW(g_pSpecialTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
+		TwAddVarRW(g_pSpecialTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.01 step=0.01");
+		TwAddButton(g_pSpecialTweakBar, "Random position", [](void *){randomPosition(); }, nullptr, "");
+		TwAddSeparator(g_pSpecialTweakBar, "SeparatorMassSpringSystem3", "");
+		TwAddVarRW(g_pSpecialTweakBar, "Spring Stiffness", TW_TYPE_FLOAT, &g_fStiffness, " ");
+		TwAddVarRW(g_pSpecialTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "max=0 step=0.01");
 	}
 
 	if (g_bRigidbody)
 	{
-		TwAddButton(g_pTweakBar, "Interaction left", [](void*){InteractionLeft(); }, nullptr, "");
-		TwAddButton(g_pTweakBar, "Interaction right", [](void*){InteractionRight(); }, nullptr, "");
+		g_pSpecialTweakBar = TwNewBar("Rigidbody Simulation");
+		TwAddButton(g_pSpecialTweakBar, "Interaction left", [](void*){InteractionLeft(); }, nullptr, "");
+		TwAddButton(g_pSpecialTweakBar, "Interaction right", [](void*){InteractionRight(); }, nullptr, "");
 	}
 
 	if (g_bBiab)
 	{
-		TwAddButton(g_pTweakBar, "Biab: Naive", [](void *){SetBiabNaive(); }, nullptr, "");
-		TwAddButton(g_pTweakBar, "Biab: KD Tree", [](void *){SetBiabKDTree(); }, nullptr, "");
-		TwAddButton(g_pTweakBar, "Biab: Uniform grid", [](void *){SetBiabUniformGrid(); }, nullptr, "");
-		TwAddVarRW(g_pTweakBar, "Num Spheres", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
-		TwAddVarRW(g_pTweakBar, "Sphere Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Sphere Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
-		TwAddVarRW(g_pTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0 step=1");
-		TwAddVarRW(g_pTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=0 max=1");
+		g_pSpecialTweakBar = TwNewBar("Balls in a box");
+		TwAddButton(g_pSpecialTweakBar, "Naive", [](void *){SetBiabNaive(); }, nullptr, "");
+		TwAddButton(g_pSpecialTweakBar, "KD Tree", [](void *){SetBiabKDTree(); }, nullptr, "");
+		TwAddButton(g_pSpecialTweakBar, "Uniform grid", [](void *){SetBiabUniformGrid(); }, nullptr, "");
+		TwAddSeparator(g_pSpecialTweakBar, "SeparatorBallsInABox1", "");
+		TwAddVarRW(g_pSpecialTweakBar, "Num Balls", TW_TYPE_INT32, &g_iNumSpheres, "min=1");
+		TwAddVarRW(g_pSpecialTweakBar, "Ball Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
+		TwAddVarRW(g_pSpecialTweakBar, "Ball Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
+		TwAddSeparator(g_pSpecialTweakBar, "SeparatorBallsInABox2", "");
+		TwAddVarRW(g_pSpecialTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0 step=1");
+		TwAddVarRW(g_pSpecialTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=0 max=1");
 	}
 }
 
@@ -1218,8 +1230,10 @@ void DrawMassSpringSystem(ID3D11DeviceContext* pd3dImmediateContext)
 		InitPoints();
 		InitSprings();
 		b_start = false;
-		TwDeleteBar(g_pTweakBar);
-		g_pTweakBar = nullptr;
+		TwDeleteBar(g_pMainTweakBar);
+		g_pMainTweakBar = nullptr;
+		TwDeleteBar(g_pSpecialTweakBar);
+		g_pSpecialTweakBar = nullptr;
 		TwTerminate();
 		InitTweakBar(pd3dDeviceTweakbar);
 	}
@@ -1267,8 +1281,10 @@ void DrawRigidBody(ID3D11DeviceContext* pd3dImmediateContext)
 	{
 		InitRBS();
 		b_start = false;
-		TwDeleteBar(g_pTweakBar);
-		g_pTweakBar = nullptr;
+		TwDeleteBar(g_pMainTweakBar);
+		g_pMainTweakBar = nullptr;
+		TwDeleteBar(g_pSpecialTweakBar);
+		g_pSpecialTweakBar = nullptr;
 		TwTerminate();
 		InitTweakBar(pd3dDeviceTweakbar);
 	}
@@ -1364,8 +1380,10 @@ void DrawBiab(ID3D11DeviceContext* pd3dImmediateContext)
 	{
 		InitBalls();
 		b_start = false;
-		TwDeleteBar(g_pTweakBar);
-		g_pTweakBar = nullptr;
+		TwDeleteBar(g_pMainTweakBar);
+		g_pMainTweakBar = nullptr;
+		TwDeleteBar(g_pSpecialTweakBar);
+		g_pSpecialTweakBar = nullptr;
 		TwTerminate();
 		InitTweakBar(pd3dDeviceTweakbar);
 	}
@@ -1508,8 +1526,10 @@ void CALLBACK OnD3D11DestroyDevice(void* pUserContext)
 {
 	SAFE_RELEASE(g_pEffect);
 
-	TwDeleteBar(g_pTweakBar);
-	g_pTweakBar = nullptr;
+	TwDeleteBar(g_pMainTweakBar);
+	g_pMainTweakBar = nullptr;
+	TwDeleteBar(g_pSpecialTweakBar);
+	g_pSpecialTweakBar = nullptr;
 	TwTerminate();
 
 	g_pSphere.reset();

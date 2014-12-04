@@ -209,10 +209,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MassSpringSystem.cpp" />
     <ClCompile Include="util\FFmpeg.cpp" />
     <ClCompile Include="util\util.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MassSpringSystem.h" />
     <ClInclude Include="util\FFmpeg.h" />
     <ClInclude Include="util\util.h" />
   </ItemGroup>
