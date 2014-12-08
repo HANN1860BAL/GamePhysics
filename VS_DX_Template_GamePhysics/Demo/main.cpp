@@ -471,7 +471,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 		g_pSpecialTweakBar = TwNewBar("Balls in a box");
 		TwAddButton(g_pSpecialTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
 		TwAddVarRW(g_pSpecialTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
-		TwAddVarRW(g_pSpecialTweakBar, "Random Balls", TW_TYPE_BOOLCPP, &g_bRandomDistrubution, "");
+		TwAddVarRW(g_pSpecialTweakBar, "Random Balls^3", TW_TYPE_BOOLCPP, &g_bRandomDistrubution, "");
 		TwAddButton(g_pSpecialTweakBar, "Naive", [](void *){SetBiabNaive(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "KD Tree", [](void *){SetBiabKDTree(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "Uniform grid", [](void *){SetBiabUniformGrid(); }, nullptr, "");
@@ -998,6 +998,7 @@ void InitBalls()
 	std::mt19937 eng;
 	std::uniform_real_distribution<float> randPos(-0.5f, 0.5f);
 
+	ba_ball.XMV_velocity = XMV_zero;
 	for (int i = 0; i < g_iNumSpheres; i++)
 	{
 		for (int k = 0; k < g_iNumSpheres; k++)
@@ -1008,13 +1009,13 @@ void InitBalls()
 					ba_ball.XMV_position = XMVectorSet(randPos(eng), randPos(eng), randPos(eng), randPos(eng));
 				else
 					ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
-				ba_ball.XMV_velocity = XMV_zero;
 				ba_ball.id = i_count;
 				v_ball.push_back(ba_ball);
 				i_count++;
 			}
 		}
 	}
+}
 }
 
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
@@ -1760,6 +1761,7 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			}
 			ApplyGravityToBalls();
 			NaiveCollisionDetection();
+			//RestrainingPosition();
 			UpdateBallPosition();
 		}
 		else if (g_bMassSpringSystem)
