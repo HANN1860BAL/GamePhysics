@@ -1016,7 +1016,6 @@ void InitBalls()
 		}
 	}
 }
-}
 
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
 void RestrainingPosition()
