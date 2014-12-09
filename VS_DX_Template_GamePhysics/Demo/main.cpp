@@ -136,7 +136,7 @@ struct Point
 	int i_id;
 };
 
-//Springs fpr MassSpringSystem
+//Springs for MassSpringSystem
 struct Spring
 {
 	int i_point1;
