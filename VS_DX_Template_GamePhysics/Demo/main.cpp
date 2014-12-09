@@ -101,10 +101,11 @@ bool g_bInteractionRight = false;
 float g_fImpulseConstant = 0.5f;
 
 //Balls in a box
-bool g_bBiab = false;
+bool g_bBiab = true;
 bool g_bBiabNaive = false;
 bool g_bBiabKDTree = false;
 bool g_bBiabUniformGrid = false;
+bool g_bRandomDistrubution = true;
 float g_fcollisionScalar = 25.0f;
 
 //Global
@@ -273,6 +274,29 @@ XMMATRIX VectorMulTranspose(XMVECTOR XMV_vector)
 		v_Mmatrix[12], v_Mmatrix[13], v_Mmatrix[14], v_Mmatrix[15]);
 }
 
+void SetStiffness(float f_stiffness)
+{
+	if (v_spring[0].f_stiffness != f_stiffness){
+		for (int i = 0; i < v_spring.size(); i++)
+		{
+			v_spring[i].f_stiffness = f_stiffness;
+		}
+	}
+}
+
+void SetMass(float f_mass)
+{
+	if (v_point[0].f_mass != f_mass)
+	{
+		for (int i = 0; i < v_point.size(); i++)
+		{
+			v_point[i].f_mass = f_mass;
+		}
+	}
+}
+
+//////////////Setter and functions for the twearkbaroptions/////////////
+
 //Resets the simulation
 void Reset()
 {
@@ -283,7 +307,18 @@ void Reset()
 	std::cout << "-----------------------------------------\n";
 }
 
-//Setter and functions for the twearkbaroptions
+
+void SetMassSpringSystem()
+{
+	b_start = true;
+
+	g_bMassSpringSystem = true;
+	g_bRigidbody = false;
+	g_bBiab = false;
+	v_box.clear();
+	v_ball.clear();
+}
+
 void SetEuler()
 {
 	g_bEuler = true;
@@ -305,16 +340,26 @@ void SetRungeKutta()
 	g_bEuler = false;
 }
 
-void SetMassSpringSystem()
+float RandomBetween(float smallNumber, float bigNumber)
 {
-	b_start = true;
-
-	g_bMassSpringSystem = true;
-	g_bRigidbody = false;
-	g_bBiab = false;
-	v_box.clear();
-	v_ball.clear();
+	float diff = bigNumber - smallNumber;
+	return (((float)rand() / RAND_MAX) * diff) + smallNumber;
 }
+
+void randomPosition()
+{
+	int i = (int)RandomBetween(0, (int)v_point.size() - 1);
+	if (!v_point[i].b_Static)
+	{
+		XMFLOAT3 XMF_tmp;
+		XMStoreFloat3(&XMF_tmp, v_point[i].XMV_position);
+		XMF_tmp.y += RandomBetween(-0.5f, 0.5f);
+		v_point[i].XMV_position = XMLoadFloat3(&XMF_tmp);
+	}
+	else randomPosition();
+}
+
+
 
 void SetRigidBody()
 {
@@ -327,6 +372,20 @@ void SetRigidBody()
 	v_spring.clear();
 	v_ball.clear();
 }
+
+void InteractionLeft()
+{
+	XMFLOAT3 XMF3_tmp = XMFLOAT3(-0.1f, 0.0f, 0.0f);
+	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
+}
+
+void InteractionRight()
+{
+	XMFLOAT3 XMF3_tmp = XMFLOAT3(0.1f, 0.0f, 0.0f);
+	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
+}
+
+
 
 void SetBiab()
 {
@@ -361,58 +420,6 @@ void SetBiabUniformGrid()
 	g_bBiabUniformGrid = true;
 }
 
-void SetStiffness(float f_stiffness)
-{
-	if (v_spring[0].f_stiffness != f_stiffness){
-		for (int i = 0; i < v_spring.size(); i++)
-		{
-			v_spring[i].f_stiffness = f_stiffness;
-		}
-	}
-}
-
-void SetMass(float f_mass)
-{
-	if (v_point[0].f_mass != f_mass)
-	{
-		for (int i = 0; i < v_point.size(); i++)
-		{
-			v_point[i].f_mass = f_mass;
-		}
-	}
-}
-
-float RandomBetween(float smallNumber, float bigNumber)
-{
-	float diff = bigNumber - smallNumber;
-	return (((float)rand() / RAND_MAX) * diff) + smallNumber;
-}
-
-void randomPosition()
-{
-	int i = (int)RandomBetween(0, (int)v_point.size() - 1);
-	if (!v_point[i].b_Static)
-	{
-		XMFLOAT3 XMF_tmp;
-		XMStoreFloat3(&XMF_tmp, v_point[i].XMV_position);
-		XMF_tmp.y += RandomBetween(-0.5f, 0.5f);
-		v_point[i].XMV_position = XMLoadFloat3(&XMF_tmp);
-	}
-	else randomPosition();
-}
-
-void InteractionLeft()
-{
-	XMFLOAT3 XMF3_tmp = XMFLOAT3(-0.1f, 0.0f, 0.0f);
-	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
-}
-
-void InteractionRight()
-{
-	XMFLOAT3 XMF3_tmp = XMFLOAT3(0.1f, 0.0f, 0.0f);
-	v_box[1].XMV_position += XMLoadFloat3(&XMF3_tmp);
-}
-
 
 // Create TweakBar and add required buttons and variables
 void InitTweakBar(ID3D11Device* pd3dDevice)
@@ -426,14 +433,14 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	TwAddButton(g_pMainTweakBar, "Rigidbody Simulation", [](void *){SetRigidBody(); }, nullptr, "");
 	TwAddButton(g_pMainTweakBar, "Balls in a box", [](void *){SetBiab(); }, nullptr, "");
 	TwAddSeparator(g_pMainTweakBar, "SeparatorMain1", "");
-	TwAddButton(g_pMainTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
 	TwAddButton(g_pMainTweakBar, "Reset Camera", [](void *){g_camera.Reset(); }, nullptr, "");
 	TwAddSeparator(g_pMainTweakBar, "SeparatorMain2", "");
-	TwAddVarRW(g_pMainTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
 
 	if (g_bMassSpringSystem)
 	{
 		g_pSpecialTweakBar = TwNewBar("Mass Spring System");
+		TwAddButton(g_pSpecialTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
+		TwAddVarRW(g_pSpecialTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
 		TwAddButton(g_pSpecialTweakBar, "Euler", [](void *){SetEuler(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "Midpoint", [](void *){SetMidpoint(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "RungeKutta", [](void *){SetRungeKutta(); }, nullptr, "");
@@ -453,6 +460,8 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	if (g_bRigidbody)
 	{
 		g_pSpecialTweakBar = TwNewBar("Rigidbody Simulation");
+		TwAddButton(g_pSpecialTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
+		TwAddVarRW(g_pSpecialTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
 		TwAddButton(g_pSpecialTweakBar, "Interaction left", [](void*){InteractionLeft(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "Interaction right", [](void*){InteractionRight(); }, nullptr, "");
 	}
@@ -460,6 +469,9 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 	if (g_bBiab)
 	{
 		g_pSpecialTweakBar = TwNewBar("Balls in a box");
+		TwAddButton(g_pSpecialTweakBar, "Reset", [](void *){Reset(); }, nullptr, "");
+		TwAddVarRW(g_pSpecialTweakBar, "Time Step Size", TW_TYPE_FLOAT, &g_fTimeStepSize, "min=0.001 step=0.001");
+		TwAddVarRW(g_pSpecialTweakBar, "Random Balls^3", TW_TYPE_BOOLCPP, &g_bRandomDistrubution, "");
 		TwAddButton(g_pSpecialTweakBar, "Naive", [](void *){SetBiabNaive(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "KD Tree", [](void *){SetBiabKDTree(); }, nullptr, "");
 		TwAddButton(g_pSpecialTweakBar, "Uniform grid", [](void *){SetBiabUniformGrid(); }, nullptr, "");
@@ -982,14 +994,21 @@ void InitBalls()
 	Ball ba_ball;
 	float f_distance = g_fSphereSize * 2;
 	int i_count = 0;
+
+	std::mt19937 eng;
+	std::uniform_real_distribution<float> randPos(-0.5f, 0.5f);
+
+	ba_ball.XMV_velocity = XMV_zero;
 	for (int i = 0; i < g_iNumSpheres; i++)
 	{
 		for (int k = 0; k < g_iNumSpheres; k++)
 		{
 			for (int l = 0; l < g_iNumSpheres; l++)
 			{
-				ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
-				ba_ball.XMV_velocity = XMV_zero;
+				if (g_bRandomDistrubution)
+					ba_ball.XMV_position = XMVectorSet(randPos(eng), randPos(eng), randPos(eng), randPos(eng));
+				else
+					ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
 				ba_ball.id = i_count;
 				v_ball.push_back(ba_ball);
 				i_count++;
@@ -997,25 +1016,42 @@ void InitBalls()
 		}
 	}
 }
+}
 
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
 void RestrainingPosition()
 {
+	float f_offset = 0.5f - g_fSphereSize;
+
 	for (int i = 0; i < v_ball.size(); i++)
 	{
-		//ToDo: change in velocoty instead of position
-		if (XMVectorGetX(v_ball[i].XMV_position) < -0.5f)
-			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetX(v_ball[i].XMV_velocity, -XMVectorGetX(v_ball[i].XMV_velocity)), g_fDamping);
-		if (XMVectorGetX(v_ball[i].XMV_position) > 0.5f)
-			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetX(v_ball[i].XMV_velocity, -XMVectorGetX(v_ball[i].XMV_velocity)), g_fDamping);
-		if (XMVectorGetY(v_ball[i].XMV_position) < -0.5f)
-			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetY(v_ball[i].XMV_velocity, -XMVectorGetY(v_ball[i].XMV_velocity)), g_fDamping);
-		if (XMVectorGetY(v_ball[i].XMV_position) > 0.5f)
-			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetY(v_ball[i].XMV_velocity, -XMVectorGetY(v_ball[i].XMV_velocity)), g_fDamping);
-		if (XMVectorGetZ(v_ball[i].XMV_position) < -0.5f)
-			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetZ(v_ball[i].XMV_velocity, -XMVectorGetZ(v_ball[i].XMV_velocity)), g_fDamping);
-		if (XMVectorGetZ(v_ball[i].XMV_position) > 0.5f)
-			v_ball[i].XMV_velocity = XMVectorScale(XMVectorSetZ(v_ball[i].XMV_velocity, -XMVectorGetZ(v_ball[i].XMV_velocity)), g_fDamping);
+		if (XMVectorGetY(v_ball[i].XMV_position) < -f_offset)
+		{
+			v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -0.5f * XMVectorGetY(v_ball[i].XMV_velocity));
+			v_ball[i].XMV_position = XMVectorSetY(v_ball[i].XMV_position, -f_offset);
+		}
+		else if (XMVectorGetX(v_ball[i].XMV_position) < -f_offset)
+		{
+			v_ball[i].XMV_velocity = XMVectorSetX(v_ball[i].XMV_velocity, -0.5f * XMVectorGetX(v_ball[i].XMV_velocity));
+			v_ball[i].XMV_position = XMVectorSetX(v_ball[i].XMV_position, -f_offset);
+		}
+		else if (XMVectorGetX(v_ball[i].XMV_position) > f_offset)
+		{
+			v_ball[i].XMV_velocity = XMVectorSetX(v_ball[i].XMV_velocity, -0.5f * XMVectorGetX(v_ball[i].XMV_velocity));
+			v_ball[i].XMV_position = XMVectorSetX(v_ball[i].XMV_position, f_offset);
+		}
+		else if (XMVectorGetZ(v_ball[i].XMV_position) < -f_offset)
+		{
+			v_ball[i].XMV_velocity = XMVectorSetZ(v_ball[i].XMV_velocity, -0.5f * XMVectorGetZ(v_ball[i].XMV_velocity));
+			v_ball[i].XMV_position = XMVectorSetZ(v_ball[i].XMV_position, -f_offset);
+		}
+		else if (XMVectorGetZ(v_ball[i].XMV_position) > f_offset)
+		{
+			v_ball[i].XMV_velocity = XMVectorSetZ(v_ball[i].XMV_velocity, -0.5f * XMVectorGetZ(v_ball[i].XMV_velocity));
+			v_ball[i].XMV_position = XMVectorSetZ(v_ball[i].XMV_position, f_offset);
+		}
+		//if (XMVectorGetY(v_ball[i].XMV_position) > 0.5f)
+		//	v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -0.98f * XMVectorGetY(v_ball[i].XMV_velocity));
 	}
 }
 
@@ -1043,15 +1079,15 @@ void NaiveCollisionDetection()
 	for (int i = 0; i < v_ball.size(); i++)
 	{
 		// k = i + 1
-		for (int k = 0; k < v_ball.size(); k++)
+		for (int k = i + 1; k < v_ball.size(); k++)
 		{
 			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ball[i].XMV_position, v_ball[k].XMV_position))) < g_fSphereSize * 2)
 			{
 				BallCollisionImpuls(&v_ball[i], &v_ball[k]);
 			}
 		}
-		RestrainingPosition();
 	}
+	RestrainingPosition();
 }
 
 void UpdateBallPosition()
@@ -1382,10 +1418,9 @@ void DrawBiab(ID3D11DeviceContext* pd3dImmediateContext)
 		b_start = false;
 		TwDeleteBar(g_pMainTweakBar);
 		g_pMainTweakBar = nullptr;
-		TwDeleteBar(g_pSpecialTweakBar);
-		g_pSpecialTweakBar = nullptr;
 		TwTerminate();
 		InitTweakBar(pd3dDeviceTweakbar);
+		TwRefreshBar(g_pSpecialTweakBar);
 	}
 
 	for (int i = 0; i < v_ball.size(); i++)
@@ -1716,7 +1751,21 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 	f_timeAcc += fElapsedTime;
 	while (f_timeAcc > g_fTimeStepSize)
 	{
-		if (g_bMassSpringSystem){
+		if (g_bBiab)
+		{
+			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
+			{
+				InitBalls();
+				i_oldNum = g_iNumSpheres;
+				f_oldSize = g_fSphereSize;
+			}
+			ApplyGravityToBalls();
+			NaiveCollisionDetection();
+			//RestrainingPosition();
+			UpdateBallPosition();
+		}
+		else if (g_bMassSpringSystem)
+		{
 			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
 			{
 				InitPoints();
@@ -1733,20 +1782,6 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			//ApplyGravityToRigidbodys();
 			ApplyPhysikRBS();
 			CollisionDetectionRigidbody();
-		}
-		else if (g_bBiab)
-		{
-			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
-			{
-				InitBalls();
-				i_oldNum = g_iNumSpheres;
-				f_oldSize = g_fSphereSize;
-			}
-			ApplyGravityToBalls();
-			NaiveCollisionDetection();
-			UpdateBallPosition();
-			//RestrainingPosition();
-			//UpdateBallPosition();
 		}
 		f_timeAcc -= g_fTimeStepSize;
 	}
