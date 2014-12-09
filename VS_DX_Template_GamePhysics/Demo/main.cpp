@@ -480,7 +480,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 		TwAddVarRW(g_pSpecialTweakBar, "Ball Size", TW_TYPE_FLOAT, &g_fSphereSize, "min=0.01 step=0.01");
 		TwAddVarRW(g_pSpecialTweakBar, "Ball Mass", TW_TYPE_FLOAT, &g_fMass, "min=0.001 step=0.01");
 		TwAddSeparator(g_pSpecialTweakBar, "SeparatorBallsInABox2", "");
-		TwAddVarRW(g_pSpecialTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0 step=1");
+		TwAddVarRW(g_pSpecialTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0");
 		TwAddVarRW(g_pSpecialTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=0 max=1");
 	}
 }
@@ -1016,7 +1016,7 @@ void InitBalls()
 		}
 	}
 }
-}
+
 
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
 void RestrainingPosition()
@@ -1055,6 +1055,63 @@ void RestrainingPosition()
 	}
 }
 
+void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
+{
+	float f_offset = 0.5f - g_fSphereSize;
+
+		if (XMVectorGetY(ba_A->XMV_position) < -f_offset)
+		{
+			ba_A->XMV_velocity = XMVectorSetY(ba_A->XMV_velocity, -0.5f * XMVectorGetY(ba_A->XMV_velocity));
+			ba_A->XMV_position = XMVectorSetY(ba_A->XMV_position, -f_offset);
+		}
+		else if (XMVectorGetX(ba_A->XMV_position) < -f_offset)
+		{
+			ba_A->XMV_velocity = XMVectorSetX(ba_A->XMV_velocity, -0.5f * XMVectorGetX(ba_A->XMV_velocity));
+			ba_A->XMV_position = XMVectorSetX(ba_A->XMV_position, -f_offset);
+		}
+		else if (XMVectorGetX(ba_A->XMV_position) > f_offset)
+		{
+			ba_A->XMV_velocity = XMVectorSetX(ba_A->XMV_velocity, -0.5f * XMVectorGetX(ba_A->XMV_velocity));
+			ba_A->XMV_position = XMVectorSetX(ba_A->XMV_position, f_offset);
+		}
+		else if (XMVectorGetZ(ba_A->XMV_position) < -f_offset)
+		{
+			ba_A->XMV_velocity = XMVectorSetZ(ba_A->XMV_velocity, -0.5f * XMVectorGetZ(ba_A->XMV_velocity));
+			ba_A->XMV_position = XMVectorSetZ(ba_A->XMV_position, -f_offset);
+		}
+		else if (XMVectorGetZ(ba_A->XMV_position) > f_offset)
+		{
+			ba_A->XMV_velocity = XMVectorSetZ(ba_A->XMV_velocity, -0.5f * XMVectorGetZ(ba_A->XMV_velocity));
+			ba_A->XMV_position = XMVectorSetZ(ba_A->XMV_position, f_offset);
+		}
+
+		if (XMVectorGetY(ba_B->XMV_position) < -f_offset)
+		{
+			ba_B->XMV_velocity = XMVectorSetY(ba_B->XMV_velocity, -0.5f * XMVectorGetY(ba_B->XMV_velocity));
+			ba_B->XMV_position = XMVectorSetY(ba_B->XMV_position, -f_offset);
+		}
+		else if (XMVectorGetX(ba_B->XMV_position) < -f_offset)
+		{
+			ba_B->XMV_velocity = XMVectorSetX(ba_B->XMV_velocity, -0.5f * XMVectorGetX(ba_B->XMV_velocity));
+			ba_B->XMV_position = XMVectorSetX(ba_B->XMV_position, -f_offset);
+		}
+		else if (XMVectorGetX(ba_B->XMV_position) > f_offset)
+		{
+			ba_B->XMV_velocity = XMVectorSetX(ba_B->XMV_velocity, -0.5f * XMVectorGetX(ba_B->XMV_velocity));
+			ba_B->XMV_position = XMVectorSetX(ba_B->XMV_position, f_offset);
+		}
+		else if (XMVectorGetZ(ba_B->XMV_position) < -f_offset)
+		{
+			ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
+			ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, -f_offset);
+		}
+		else if (XMVectorGetZ(ba_B->XMV_position) > f_offset)
+		{
+			ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
+			ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, f_offset);
+		}
+}
+
 //Apllys gravity to balls
 void ApplyGravityToBalls()
 {
@@ -1072,6 +1129,10 @@ void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
 	//std::cout << f_impuls << "\n";
 	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * f_impuls));
 	ba_sphereB->XMV_velocity = XMVectorAdd(ba_sphereB->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * -f_impuls));
+	
+	float f_tmp = 2 * g_fSphereSize - XMVectorGetX(XMVector3Length(ba_sphereA->XMV_position - ba_sphereB->XMV_position));
+	ba_sphereA->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(f_tmp / 2);
+	ba_sphereB->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(-f_tmp / 2);
 }
 
 void NaiveCollisionDetection()
@@ -1084,6 +1145,7 @@ void NaiveCollisionDetection()
 			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ball[i].XMV_position, v_ball[k].XMV_position))) < g_fSphereSize * 2)
 			{
 				BallCollisionImpuls(&v_ball[i], &v_ball[k]);
+				RestrainPositionOfTwoBalls(&v_ball[i], &v_ball[k]);
 			}
 		}
 	}
