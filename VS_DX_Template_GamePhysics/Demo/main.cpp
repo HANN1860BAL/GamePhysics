@@ -190,6 +190,32 @@ struct Pairs
 	Ball* ba_ballB;
 };
 
+//Inner Knot for KD Tree for MassCollisionDetection
+struct InnerKnot
+{
+	Ball ba_innerKnot;
+	Ball ba_smallerBall;
+	Ball ba_greaterBall;
+};
+
+//Leaf for KDTree for MassCollisionDetection
+struct Leaf
+{
+	Ball ba_leaf;
+	std::vector < Ball* > v_collidingBalls;
+};
+
+//KDTree for MassCollisionDetection
+struct KDTree
+{
+	std::vector<InnerKnot> v_innerKnots;
+	std::vector<Leaf> v_leafs;
+};
+
+// Global 2
+Ball* ba_rootOfKdTree;
+KDTree kdt_KDTree;
+
 //storage for MassSpringSystem
 std::vector<Point> v_point;
 std::vector<Spring> v_spring;
@@ -1112,7 +1138,7 @@ void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
 		}
 }
 
-//Apllys gravity to balls
+//Applies gravity to balls
 void ApplyGravityToBalls()
 {
 	for (int i = 0; i < v_ball.size(); i++)
@@ -1152,6 +1178,16 @@ void NaiveCollisionDetection()
 	RestrainingPosition();
 }
 
+void KDTreeCollisionDetection()
+{
+
+}
+
+void UniformGridCollisionDetection()
+{
+
+}
+
 void UpdateBallPosition()
 {
 	for (int i = 0; i < v_ball.size(); i++)
@@ -1160,7 +1196,74 @@ void UpdateBallPosition()
 	}
 }
 
+KDTree BuildKDTree(std::vector<Ball> balls, int depth)
+{
+	std::vector<Ball> v_smallerBalls;
+	std::vector<Ball> v_greaterEqualBalls;
 
+	ba_rootOfKdTree = &balls[(balls.size() / 2)];
+
+	if (balls.size() > 1)
+	{
+		if (depth % 3 == 0)
+		{
+			// x-axis
+			for (int i = 0; i < balls.size(); i++)
+			{
+				if (XMVectorGetX(v_ball[i].XMV_position) < XMVectorGetX(balls[balls.size() / 2].XMV_position))
+				{
+					v_smallerBalls.push_back(balls[i]);
+				}
+				else
+				{
+					v_greaterEqualBalls.push_back(balls[i]);
+				}
+			}
+			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_smallerBalls, depth + 1));
+			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_greaterEqualBalls, depth + 1));
+		}
+		else if (depth % 3 == 1)
+		{
+			// y-axis
+			for (int i = 0; i < balls.size(); i++)
+			{
+				if (XMVectorGetY(v_ball[i].XMV_position) < XMVectorGetY(balls[balls.size() / 2].XMV_position))
+				{
+					v_smallerBalls.push_back(balls[i]);
+				}
+				else
+				{
+					v_greaterEqualBalls.push_back(balls[i]);
+				}
+			}
+			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_smallerBalls, depth + 1));
+			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_greaterEqualBalls, depth + 1));
+		}
+		else
+		{
+			// z-axis
+			for (int i = 0; i < balls.size(); i++)
+			{
+				if (XMVectorGetZ(v_ball[i].XMV_position) < XMVectorGetZ(balls[balls.size() / 2].XMV_position))
+				{
+					v_smallerBalls.push_back(balls[i]);
+				}
+				else
+				{
+					v_greaterEqualBalls.push_back(balls[i]);
+				}
+			}
+			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_smallerBalls, depth + 1));
+			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_greaterEqualBalls, depth + 1));
+		}
+	}
+	else
+	{
+		kdt_KDTree.v_leafs.pushBack(balls[0]);
+	}
+
+	// TODO: return something
+}
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
 // (Drawn as line primitives using a DirectXTK primitive batch)
@@ -1822,7 +1925,20 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 				f_oldSize = g_fSphereSize;
 			}
 			ApplyGravityToBalls();
-			NaiveCollisionDetection();
+			if (g_bBiabNaive)
+			{
+				NaiveCollisionDetection();
+			}
+			else if (g_bBiabKDTree)
+			{
+				// TODO: Delete the KD Tree
+				BuildKDTree(v_ball, 0);
+				KDTreeCollisionDetection();
+			}
+			else if (g_bBiabUniformGrid)
+			{
+				UniformGridCollisionDetection();
+			}
 			//RestrainingPosition();
 			UpdateBallPosition();
 		}
