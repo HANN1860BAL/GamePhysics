@@ -103,7 +103,7 @@ float g_fImpulseConstant = 0.5f;
 //Balls in a box
 bool g_bBiab = true;
 bool g_bBiabNaive = false;
-bool g_bBiabKDTree = false;
+bool g_bBiabKDTree = true;
 bool g_bBiabUniformGrid = false;
 bool g_bRandomDistrubution = true;
 float g_fcollisionScalar = 25.0f;
@@ -115,6 +115,7 @@ float f_oldSize = 0;
 static double f_timeAcc;
 int i_oldNum = 0;
 ID3D11Device* pd3dDeviceTweakbar;
+bool b_once = true;
 
 //usefull for initialisation
 XMVECTOR XMV_zero = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
@@ -193,27 +194,28 @@ struct Pairs
 //Inner Knot for KD Tree for MassCollisionDetection
 struct InnerKnot
 {
-	Ball ba_innerKnot;
-	Ball ba_smallerBall;
-	Ball ba_greaterBall;
+	Ball* ba_innerKnot;
+	InnerKnot* ba_smallerBall;
+	InnerKnot* ba_greaterBall;
+	bool b_isLeaf;
+	std::vector<Ball*> v_leaf;
 };
 
-//Leaf for KDTree for MassCollisionDetection
-struct Leaf
-{
-	Ball ba_leaf;
-	std::vector < Ball > v_collidingBalls;
-};
+////Leaf for KDTree for MassCollisionDetection
+//struct Leaf
+//{
+//	Ball ba_leaf;
+//	std::vector < Ball > v_collidingBalls;
+//};
 
 //KDTree for MassCollisionDetection
 struct KDTree
 {
 	std::vector<InnerKnot> v_innerKnots;
-	std::vector<Leaf> v_leafs;
+	//std::vector<Leaf> v_leafs;
 };
 
 // Global 2
-Ball* ba_rootOfKdTree;
 KDTree kdt_KDTree;
 
 //storage for MassSpringSystem
@@ -258,6 +260,13 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 	XMStoreFloat4(&XMF4_tmp, XMV_vector);
 	std::cout << s_name << "\n";
 	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
+}
+
+void PrintKdTree(InnerKnot* ik_innerKnot)
+{
+	PrintKdTree(ik_innerKnot->ba_smallerBall);
+	std::cout << "smaller: " << ik_innerKnot->ba_innerKnot->id << "\n";
+	PrintKdTree(ik_innerKnot->ba_greaterBall);
 }
 
 //transforms a XMVECTOR(w,x,y,z) to a quaternion(x,y,z,w)
@@ -1201,9 +1210,8 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	std::vector<Ball> v_smallerBalls;
 	std::vector<Ball> v_greaterEqualBalls;
 
-	ba_rootOfKdTree = &balls[(balls.size() / 2)];
 	InnerKnot ik_innerKnot;
-	ik_innerKnot.ba_innerKnot = balls[(balls.size() / 2)];
+	ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
 
 	if (balls.size() > 1)
 	{
@@ -1221,8 +1229,8 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			ik_innerKnot.ba_smallerBall = (BuildKDTree(v_smallerBalls, depth + 1).ba_smallerBall);
-			ik_innerKnot.ba_greaterBall = (BuildKDTree(v_greaterEqualBalls, depth + 1).ba_greaterBall);
+			ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
+			ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
 		else if (depth % 3 == 1)
 		{
@@ -1238,8 +1246,8 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			ik_innerKnot.ba_smallerBall = (BuildKDTree(v_smallerBalls, depth + 1).ba_smallerBall);
-			ik_innerKnot.ba_greaterBall = (BuildKDTree(v_greaterEqualBalls, depth + 1).ba_greaterBall);
+			ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
+			ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
 		else
 		{
@@ -1255,19 +1263,18 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			ik_innerKnot.ba_smallerBall = (BuildKDTree(v_smallerBalls, depth + 1).ba_smallerBall);
-			ik_innerKnot.ba_greaterBall = (BuildKDTree(v_greaterEqualBalls, depth + 1).ba_greaterBall);
+			ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
+			ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
+		return ik_innerKnot;
 	}
 	else
 	{
-		Leaf l_leaf;
-		l_leaf.ba_leaf = balls[(balls.size() / 2)];
-		kdt_KDTree.v_leafs.push_back(l_leaf);
+		ik_innerKnot.ba_greaterBall = nullptr;
+		ik_innerKnot.ba_smallerBall = nullptr;
+		ik_innerKnot.b_isLeaf = true;
+		return ik_innerKnot;
 	}
-
-	return ik_innerKnot;
-	// TODO: return something
 }
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
@@ -1937,8 +1944,13 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			else if (g_bBiabKDTree)
 			{
 				// TODO: Delete the KD Tree
-				BuildKDTree(v_ball, 0);
-				KDTreeCollisionDetection();
+				InnerKnot ik_tmp = BuildKDTree(v_ball, 0);
+				if (b_once)
+				{
+					PrintKdTree(&ik_tmp);
+					b_once = false;
+				}
+				//KDTreeCollisionDetection();
 			}
 			else if (g_bBiabUniformGrid)
 			{
