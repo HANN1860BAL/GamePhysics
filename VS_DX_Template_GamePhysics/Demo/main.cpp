@@ -266,12 +266,22 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
 }
 
-//void PrintKdTree(InnerKnot* ik_innerKnot)
-//{
-//	PrintKdTree(ik_innerKnot->ba_smallerBall);
-//	std::cout << "smaller: " << ik_innerKnot->ba_innerKnot->id << "\n";
-//	PrintKdTree(ik_innerKnot->ba_greaterBall);
-//}
+void PrintKdTree()
+{
+	std::cout << kdt_KDTree.v_innerKnots.size() << "\n";
+	for (int i = 0; i < kdt_KDTree.v_innerKnots.size(); i++)
+	{
+		std::cout << "Knot: " << kdt_KDTree.v_innerKnots[i].ba_innerKnot->id << "\n";
+		if (kdt_KDTree.v_innerKnots[i].ba_smallerBall != nullptr)
+		{
+			std::cout << "smaller Knot: " << kdt_KDTree.v_innerKnots[i].ba_smallerBall->ba_innerKnot->id << "\n";
+		}
+		if (kdt_KDTree.v_innerKnots[i].ba_greaterBall != nullptr)
+		{
+			std::cout << "greater Knot: " << kdt_KDTree.v_innerKnots[i].ba_greaterBall->ba_innerKnot->id << "\n";
+		}
+	}
+}
 
 //transforms a XMVECTOR(w,x,y,z) to a quaternion(x,y,z,w)
 XMVECTOR VectorToQuaternion(XMVECTOR XMV_vector)
@@ -1280,12 +1290,14 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			if (!v_greaterEqualBalls.empty())
 				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
+		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
 	else 
 	{
 		ik_innerKnot.ba_innerKnot = &balls[0];
 		ik_innerKnot.b_isLeaf = true;
+		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
 }
@@ -1960,11 +1972,10 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			{
 				//myTimer.get();
 				// TODO: Delete the KD Tree
-				InnerKnot ik_tmp = BuildKDTree(v_ball, 0);
+				BuildKDTree(v_ball, 0);
 				if (b_once)
 				{
-
-					//PrintKdTree(&ik_tmp);
+					PrintKdTree();
 					b_once = false;
 				}
 				//KDTreeCollisionDetection();
