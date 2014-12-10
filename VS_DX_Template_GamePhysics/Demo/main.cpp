@@ -266,12 +266,12 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
 }
 
-void PrintKdTree(InnerKnot* ik_innerKnot)
-{
-	PrintKdTree(ik_innerKnot->ba_smallerBall);
-	std::cout << "smaller: " << ik_innerKnot->ba_innerKnot->id << "\n";
-	PrintKdTree(ik_innerKnot->ba_greaterBall);
-}
+//void PrintKdTree(InnerKnot* ik_innerKnot)
+//{
+//	PrintKdTree(ik_innerKnot->ba_smallerBall);
+//	std::cout << "smaller: " << ik_innerKnot->ba_innerKnot->id << "\n";
+//	PrintKdTree(ik_innerKnot->ba_greaterBall);
+//}
 
 //transforms a XMVECTOR(w,x,y,z) to a quaternion(x,y,z,w)
 XMVECTOR VectorToQuaternion(XMVECTOR XMV_vector)
@@ -1215,7 +1215,10 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	std::vector<Ball> v_greaterEqualBalls;
 
 	InnerKnot ik_innerKnot;
-
+	ik_innerKnot.ba_innerKnot = nullptr;
+	ik_innerKnot.ba_greaterBall = nullptr;
+	ik_innerKnot.ba_smallerBall = nullptr;
+	ik_innerKnot.b_isLeaf = false;
 	if (balls.size() > 1)
 	{
 		ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
@@ -1233,8 +1236,10 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
-			ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			if (!v_smallerBalls.empty())
+				ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
+			if (!v_greaterEqualBalls.empty())
+				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
 		else if (depth % 3 == 1)
 		{
@@ -1250,8 +1255,10 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
-			ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			if (!v_smallerBalls.empty())
+				ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
+			if (!v_greaterEqualBalls.empty())
+				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
 		else
 		{
@@ -1267,22 +1274,18 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
-			ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			if (!v_smallerBalls.empty())
+				ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
+			if (!v_greaterEqualBalls.empty())
+				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
 		return ik_innerKnot;
 	}
-	else
+	else 
 	{
-		if (balls.size() >0)
-		{
-			ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
-			ik_innerKnot.ba_greaterBall = nullptr;
-			ik_innerKnot.ba_smallerBall = nullptr;
-			ik_innerKnot.b_isLeaf = true;
-			return ik_innerKnot;
-		}
-	}
+		ik_innerKnot.ba_innerKnot = &balls[0];
+		ik_innerKnot.b_isLeaf = true;
+		return ik_innerKnot;	}
 }
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
@@ -1958,7 +1961,8 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 				InnerKnot ik_tmp = BuildKDTree(v_ball, 0);
 				if (b_once)
 				{
-					PrintKdTree(&ik_tmp);
+
+					//PrintKdTree(&ik_tmp);
 					b_once = false;
 				}
 				//KDTreeCollisionDetection();
