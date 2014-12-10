@@ -108,7 +108,7 @@ bool g_bBiab = true;
 bool g_bBiabNaive = false;
 bool g_bBiabKDTree = true;
 bool g_bBiabUniformGrid = false;
-bool g_bRandomDistrubution = true;
+bool g_bRandomDistrubution = false;
 float g_fcollisionScalar = 25.0f;
 
 //Global
@@ -1219,6 +1219,7 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	ik_innerKnot.ba_greaterBall = nullptr;
 	ik_innerKnot.ba_smallerBall = nullptr;
 	ik_innerKnot.b_isLeaf = false;
+
 	if (balls.size() > 1)
 	{
 		ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
@@ -1227,11 +1228,11 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			// x-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetX(v_ball[i].XMV_position) < XMVectorGetX(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetX(balls[i].XMV_position) < XMVectorGetX(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else
+				else if (XMVectorGetX(balls[i].XMV_position) > XMVectorGetX(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1246,11 +1247,11 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			// y-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetY(v_ball[i].XMV_position) < XMVectorGetY(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetY(balls[i].XMV_position) < XMVectorGetY(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else
+				else if (XMVectorGetY(balls[i].XMV_position) > XMVectorGetY(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1265,11 +1266,11 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			// z-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetZ(v_ball[i].XMV_position) < XMVectorGetZ(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetZ(balls[i].XMV_position) < XMVectorGetZ(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else
+				else if (XMVectorGetZ(balls[i].XMV_position) > XMVectorGetZ(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1285,7 +1286,8 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	{
 		ik_innerKnot.ba_innerKnot = &balls[0];
 		ik_innerKnot.b_isLeaf = true;
-		return ik_innerKnot;	}
+		return ik_innerKnot;
+	}
 }
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
