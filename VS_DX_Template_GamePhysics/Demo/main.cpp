@@ -1215,10 +1215,10 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	std::vector<Ball> v_greaterEqualBalls;
 
 	InnerKnot ik_innerKnot;
-	ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
 
 	if (balls.size() > 1)
 	{
+		ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
 		if (depth % 3 == 0)
 		{
 			// x-axis
@@ -1274,10 +1274,14 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	}
 	else
 	{
-		ik_innerKnot.ba_greaterBall = nullptr;
-		ik_innerKnot.ba_smallerBall = nullptr;
-		ik_innerKnot.b_isLeaf = true;
-		return ik_innerKnot;
+		if (balls.size() >0)
+		{
+			ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
+			ik_innerKnot.ba_greaterBall = nullptr;
+			ik_innerKnot.ba_smallerBall = nullptr;
+			ik_innerKnot.b_isLeaf = true;
+			return ik_innerKnot;
+		}
 	}
 }
 
