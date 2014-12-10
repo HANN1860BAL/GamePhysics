@@ -9,6 +9,9 @@
 #include <random>
 #include <iostream>
 
+//Timer include
+//#include <util/timer.h>
+
 //DirectX includes
 #include <DirectXMath.h>
 using namespace DirectX;
@@ -212,9 +215,10 @@ struct KDTree
 	std::vector<Leaf> v_leafs;
 };
 
-// Global 2
+// Globals for Balls in a box
 Ball* ba_rootOfKdTree;
 KDTree kdt_KDTree;
+//MuTime myTimer;
 
 //storage for MassSpringSystem
 std::vector<Point> v_point;
@@ -1932,17 +1936,23 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			ApplyGravityToBalls();
 			if (g_bBiabNaive)
 			{
+				//myTimer.get();
 				NaiveCollisionDetection();
+				//std::cout << "Time passed with naive " << myTimer.update().time << " milliseconds\n";
 			}
 			else if (g_bBiabKDTree)
 			{
+				//myTimer.get();
 				// TODO: Delete the KD Tree
 				BuildKDTree(v_ball, 0);
 				KDTreeCollisionDetection();
+				//std::cout << "Time passed with KD Tree" << myTimer.update().time << " milliseconds\n";
 			}
 			else if (g_bBiabUniformGrid)
 			{
+				//myTimer.get();
 				UniformGridCollisionDetection();
+				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
 			}
 			//RestrainingPosition();
 			UpdateBallPosition();
