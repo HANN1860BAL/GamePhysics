@@ -202,7 +202,7 @@ struct InnerKnot
 struct Leaf
 {
 	Ball ba_leaf;
-	std::vector < Ball* > v_collidingBalls;
+	std::vector < Ball > v_collidingBalls;
 };
 
 //KDTree for MassCollisionDetection
@@ -1196,12 +1196,14 @@ void UpdateBallPosition()
 	}
 }
 
-KDTree BuildKDTree(std::vector<Ball> balls, int depth)
+InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 {
 	std::vector<Ball> v_smallerBalls;
 	std::vector<Ball> v_greaterEqualBalls;
 
 	ba_rootOfKdTree = &balls[(balls.size() / 2)];
+	InnerKnot ik_innerKnot;
+	ik_innerKnot.ba_innerKnot = balls[(balls.size() / 2)];
 
 	if (balls.size() > 1)
 	{
@@ -1219,8 +1221,8 @@ KDTree BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_smallerBalls, depth + 1));
-			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			ik_innerKnot.ba_smallerBall = (BuildKDTree(v_smallerBalls, depth + 1).ba_smallerBall);
+			ik_innerKnot.ba_greaterBall = (BuildKDTree(v_greaterEqualBalls, depth + 1).ba_greaterBall);
 		}
 		else if (depth % 3 == 1)
 		{
@@ -1236,8 +1238,8 @@ KDTree BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_smallerBalls, depth + 1));
-			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			ik_innerKnot.ba_smallerBall = (BuildKDTree(v_smallerBalls, depth + 1).ba_smallerBall);
+			ik_innerKnot.ba_greaterBall = (BuildKDTree(v_greaterEqualBalls, depth + 1).ba_greaterBall);
 		}
 		else
 		{
@@ -1253,15 +1255,18 @@ KDTree BuildKDTree(std::vector<Ball> balls, int depth)
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
 			}
-			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_smallerBalls, depth + 1));
-			kdt_KDTree.v_innerKnots.pushBack(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			ik_innerKnot.ba_smallerBall = (BuildKDTree(v_smallerBalls, depth + 1).ba_smallerBall);
+			ik_innerKnot.ba_greaterBall = (BuildKDTree(v_greaterEqualBalls, depth + 1).ba_greaterBall);
 		}
 	}
 	else
 	{
-		kdt_KDTree.v_leafs.pushBack(balls[0]);
+		Leaf l_leaf;
+		l_leaf.ba_leaf = balls[(balls.size() / 2)];
+		kdt_KDTree.v_leafs.push_back(l_leaf);
 	}
 
+	return ik_innerKnot;
 	// TODO: return something
 }
 
