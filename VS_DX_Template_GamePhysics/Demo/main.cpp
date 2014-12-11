@@ -199,11 +199,23 @@ struct InnerKnot
 {
 	Ball* ba_innerKnot;
 	InnerKnot* ba_smallerBall;
-	InnerKnot* ba_greaterBall;
+	InnerKnot* ba_greaterEqualBall;
+	std::vector<Ball> v_smallerBalls;
+	std::vector<Ball> v_greaterEqualBalls;
+	XMFLOAT3 XMF3_seperator;
 	bool b_isLeaf;
 	std::vector<Ball*> v_leaf;
 };
 
+struct Node
+{
+	int data;
+	Node* left;
+	Node* right;
+};
+
+Node* N_root;
+int i_data = 0;
 ////Leaf for KDTree for MassCollisionDetection
 //struct Leaf
 //{
@@ -273,12 +285,13 @@ void PrintKdTree()
 	std::cout << kdt_KDTree.v_innerKnots.size() << "\n";
 	for (int i = 0; i < kdt_KDTree.v_innerKnots.size(); i++)
 	{
-		std::cout << "Knot: " << kdt_KDTree.v_innerKnots[i].ba_innerKnot.id << "\n";
+		std::cout << "Knot: " << kdt_KDTree.v_innerKnots[i].ba_innerKnot->id << "\n";
 		if (kdt_KDTree.v_innerKnots[i].ba_smallerBall != nullptr)
-			std::cout << "Knot smaller: " << kdt_KDTree.v_innerKnots[i].ba_smallerBall << "\n";
-		if (kdt_KDTree.v_innerKnots[i].ba_greaterBall != nullptr)
-			std::cout << "Knot greater: " << kdt_KDTree.v_innerKnots[i].ba_greaterBall << "\n";
+			std::cout << "Knot smaller: " << kdt_KDTree.v_innerKnots[i].ba_smallerBall->ba_innerKnot->id << "\n";
+		if (kdt_KDTree.v_innerKnots[i].ba_greaterEqualBall != nullptr)
+			std::cout << "Knot greater: " << kdt_KDTree.v_innerKnots[i].ba_greaterEqualBall->ba_innerKnot->id << "\n";
 		std::cout << "-------------------\n";
+
 	}
 }
 
@@ -342,6 +355,81 @@ void SetMass(float f_mass)
 		}
 	}
 }
+
+void SeperateX(std::vector<Ball> v_origin, std::vector<Ball>* v_smallerBalls, std::vector<Ball>* v_greaterEqualBalls, float seperator)
+{
+	for (int i = 0; i < v_origin.size(); i++)
+	{
+
+		if (XMVectorGetX(v_origin[i].XMV_position) < seperator)
+		{
+			v_smallerBalls->push_back(v_origin[i]);
+		}
+		else
+		{
+			v_greaterEqualBalls->push_back(v_origin[i]);
+		}
+	}
+}
+
+void SeperateY(std::vector<Ball> v_origin, std::vector<Ball>* v_smallerBalls, std::vector<Ball>* v_greaterEqualBalls, float seperator)
+{
+	for (int i = 0; i < v_origin.size(); i++)
+	{
+
+		if (XMVectorGetY(v_origin[i].XMV_position) < seperator)
+		{
+			v_smallerBalls->push_back(v_origin[i]);
+		}
+		else
+		{
+			v_greaterEqualBalls->push_back(v_origin[i]);
+		}
+	}
+}
+
+void SeperateZ(std::vector<Ball> v_origin, std::vector<Ball>* v_smallerBalls, std::vector<Ball>* v_greaterEqualBalls, float seperator)
+{
+	for (int i = 0; i < v_origin.size(); i++)
+	{
+
+		if (XMVectorGetZ(v_origin[i].XMV_position) < seperator)
+		{
+			v_smallerBalls->push_back(v_origin[i]);
+		}
+		else
+		{
+			v_greaterEqualBalls->push_back(v_origin[i]);
+		}
+	}
+}
+
+bool SortX(const Ball &ba_A, const Ball &ba_B)
+{
+	return XMVectorGetX(ba_A.XMV_position) < XMVectorGetX(ba_B.XMV_position);
+}
+bool SortY(const Ball &ba_A, const Ball &ba_B)
+{
+	return XMVectorGetY(ba_A.XMV_position) < XMVectorGetY(ba_B.XMV_position);
+}
+bool SortZ(const Ball &ba_A, const Ball &ba_B)
+{
+	return XMVectorGetZ(ba_A.XMV_position) < XMVectorGetZ(ba_B.XMV_position);
+}
+
+
+//float SortZ(std::vector<Ball> v_unsorted)
+//{
+//	std::vector<float> v_sorted;
+//	for (int i = 0; i < v_unsorted.size(); i++)
+//	{
+//		v_sorted.push_back(XMVectorGetZ(v_unsorted[i].XMV_position));
+//	}
+//	std::sort(v_sorted.begin(), v_sorted.end());
+//	return v_sorted[v_sorted.size() / 2];
+//}
+
+
 
 //////////////Setter and functions for the twearkbaroptions/////////////
 
@@ -1177,7 +1265,7 @@ void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
 	//std::cout << f_impuls << "\n";
 	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * f_impuls));
 	ba_sphereB->XMV_velocity = XMVectorAdd(ba_sphereB->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * -f_impuls));
-	
+
 	float f_tmp = 2 * g_fSphereSize - XMVectorGetX(XMVector3Length(ba_sphereA->XMV_position - ba_sphereB->XMV_position));
 	ba_sphereA->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(f_tmp / 2);
 	ba_sphereB->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(-f_tmp / 2);
@@ -1220,85 +1308,108 @@ void UpdateBallPosition()
 
 InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 {
-	std::vector<Ball> v_smallerBalls;
-	std::vector<Ball> v_greaterEqualBalls;
-
 	InnerKnot ik_innerKnot;
-	ik_innerKnot.ba_greaterBall = nullptr;
+	ik_innerKnot.ba_innerKnot = nullptr;
+	ik_innerKnot.ba_greaterEqualBall = nullptr;
 	ik_innerKnot.ba_smallerBall = nullptr;
+	ik_innerKnot.v_smallerBalls.clear();
+	ik_innerKnot.v_greaterEqualBalls.clear();
 	ik_innerKnot.b_isLeaf = false;
 
 	if (balls.size() > 1)
 	{
-		ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
+
 		//std::cout << ik_innerKnot.ba_innerKnot.id << "\n";
 		if (depth % 3 == 0)
 		{
 			// x-axis
-			for (int i = 0; i < balls.size(); i++)
-			{
+			std::sort(balls.begin(), balls.end(), SortX);
+			ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
+			SeperateX(balls, &ik_innerKnot.v_smallerBalls, &ik_innerKnot.v_greaterEqualBalls, XMVectorGetX(ik_innerKnot.ba_innerKnot->XMV_position));
 
-				if (XMVectorGetX(balls[i].XMV_position) < XMVectorGetX(ik_innerKnot.ba_innerKnot->XMV_position))
-				{
-					v_smallerBalls.push_back(balls[i]);
-				}
-				{
-					v_greaterEqualBalls.push_back(balls[i]);
-				}
-			}
-			if (!v_smallerBalls.empty())
-				ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
-			if (!v_greaterEqualBalls.empty())
-				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			if (!ik_innerKnot.v_smallerBalls.empty())
+				ik_innerKnot.ba_smallerBall = &(BuildKDTree(ik_innerKnot.v_smallerBalls, depth + 1));
+			if (!ik_innerKnot.v_greaterEqualBalls.empty())
+				ik_innerKnot.ba_greaterEqualBall = &(BuildKDTree(ik_innerKnot.v_greaterEqualBalls, depth + 1));
 		}
 		else if (depth % 3 == 1)
 		{
 			// y-axis
-			for (int i = 0; i < balls.size(); i++)
-			{
-			if (XMVectorGetY(v_ball[i].XMV_position) < XMVectorGetY(balls[balls.size() / 2].XMV_position))
-				if (XMVectorGetY(balls[i].XMV_position) < XMVectorGetY(ik_innerKnot.ba_innerKnot->XMV_position))
-				{
-					v_smallerBalls.push_back(balls[i]);
-				}
-				{
-					v_greaterEqualBalls.push_back(balls[i]);
-				}
-			}
-			if (!v_smallerBalls.empty())
-				ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
-			if (!v_greaterEqualBalls.empty())
-				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			std::sort(balls.begin(), balls.end(), SortY);
+			ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
+			SeperateY(balls, &ik_innerKnot.v_smallerBalls, &ik_innerKnot.v_greaterEqualBalls, XMVectorGetY(ik_innerKnot.ba_innerKnot->XMV_position));
+
+			if (!ik_innerKnot.v_smallerBalls.empty())
+				ik_innerKnot.ba_smallerBall = &(BuildKDTree(ik_innerKnot.v_smallerBalls, depth + 1));
+			if (!ik_innerKnot.v_greaterEqualBalls.empty())
+				ik_innerKnot.ba_greaterEqualBall = &(BuildKDTree(ik_innerKnot.v_greaterEqualBalls, depth + 1));
 		}
 		else if (depth % 3 == 2)
 		{
 			// z-axis
-			for (int i = 0; i < balls.size(); i++)
-			{
+			std::sort(balls.begin(), balls.end(), SortZ);
+			ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
+			SeperateZ(balls, &ik_innerKnot.v_smallerBalls, &ik_innerKnot.v_greaterEqualBalls, XMVectorGetZ(ik_innerKnot.ba_innerKnot->XMV_position));
 
-				if (XMVectorGetZ(balls[i].XMV_position) < XMVectorGetZ(ik_innerKnot.ba_innerKnot->XMV_position))
-				{
-					v_smallerBalls.push_back(balls[i]);
-				}
-				{
-					v_greaterEqualBalls.push_back(balls[i]);
-				}
-			}
-			if (!v_smallerBalls.empty())
-				ik_innerKnot.ba_smallerBall = &(BuildKDTree(v_smallerBalls, depth + 1));
-			if (!v_greaterEqualBalls.empty())
-				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
+			if (!ik_innerKnot.v_smallerBalls.empty())
+				ik_innerKnot.ba_smallerBall = &(BuildKDTree(ik_innerKnot.v_smallerBalls, depth + 1));
+			if (!ik_innerKnot.v_greaterEqualBalls.empty())
+				ik_innerKnot.ba_greaterEqualBall = &(BuildKDTree(ik_innerKnot.v_greaterEqualBalls, depth + 1));
 		}
 		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
-	else 
+	else
 	{
 		ik_innerKnot.ba_innerKnot = &balls[0];
 		ik_innerKnot.b_isLeaf = true;
 		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
+}
+
+void DestroyKDTree(InnerKnot* ik_innerKnot)
+{
+	if (ik_innerKnot->ba_smallerBall != nullptr)
+		DestroyKDTree(ik_innerKnot->ba_smallerBall);
+	if (ik_innerKnot->ba_greaterEqualBall != nullptr)
+		DestroyKDTree(ik_innerKnot->ba_greaterEqualBall);
+	ik_innerKnot->v_smallerBalls.clear();
+	ik_innerKnot->v_greaterEqualBalls.clear();
+	free(ik_innerKnot->ba_innerKnot);
+	free(ik_innerKnot->ba_smallerBall);
+	free(ik_innerKnot->ba_greaterEqualBall);
+}
+
+
+Node* tree(Node* node)
+{
+	node->data = i_data;
+	i_data++;
+	Node newNode;
+	newNode.data = i_data;
+	newNode.left = nullptr;
+	newNode.right = nullptr;
+	if (i_data < 5)
+	{
+		node->left = tree(&newNode);
+		node->right = tree(&newNode);
+	}
+	else
+	{
+		node->left = nullptr;
+		node->right = nullptr;
+	}
+	return node;
+}
+
+void treeprint(Node* node)
+{
+	std::cout << node->data << "\n";
+	if (node->left != nullptr)
+		treeprint(node->left);
+	if (node->right != nullptr)
+		treeprint(node->right);
 }
 
 // Draw the edges of the bounding box [-0.5;0.5]³ rotated with the cameras model tranformation.
@@ -1973,10 +2084,23 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			{
 				//myTimer.get();
 				// TODO: Delete the KD Tree
-				BuildKDTree(v_ball, 0);
+				//BuildKDTree(v_ball, 0);
 				if (b_once)
 				{
-					PrintKdTree();
+					//for (int i = 0; i < v_ball.size(); i++)
+					//{
+					//	std::cout << XMVectorGetX(v_ball[i].XMV_position) << "\n";
+					//}
+					//std::cout << "---------------\n";
+					//std::sort(v_ball.begin(), v_ball.end(), SortX);
+					//for (int i = 0; i < v_ball.size(); i++)
+					//{
+					//	std::cout << XMVectorGetX(v_ball[i].XMV_position) << "\n";
+					//}
+					//PrintKdTree();
+					N_root->data = i_data;
+					N_root = tree(N_root);
+					//treeprint(N_root);
 					b_once = false;
 				}
 				//KDTreeCollisionDetection();
