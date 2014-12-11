@@ -23,6 +23,9 @@
       <Filter>util</Filter>
     </ClInclude>
     <ClInclude Include="MassSpringSystem.h" />
+    <ClInclude Include="timer.h">
+      <Filter>util</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="effect.fx" />

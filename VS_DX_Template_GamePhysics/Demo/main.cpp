@@ -9,6 +9,9 @@
 #include <random>
 #include <iostream>
 
+//Timer include
+//#include <util/timer.h>
+
 //DirectX includes
 #include <DirectXMath.h>
 using namespace DirectX;
@@ -194,7 +197,7 @@ struct Pairs
 //Inner Knot for KD Tree for MassCollisionDetection
 struct InnerKnot
 {
-	Ball ba_innerKnot;
+	Ball* ba_innerKnot;
 	InnerKnot* ba_smallerBall;
 	InnerKnot* ba_greaterBall;
 	bool b_isLeaf;
@@ -215,8 +218,10 @@ struct KDTree
 	//std::vector<Leaf> v_leafs;
 };
 
-// Global 2
+
+// Globals for Balls in a box
 KDTree kdt_KDTree;
+//MuTime myTimer;
 
 //storage for MassSpringSystem
 std::vector<Point> v_point;
@@ -261,6 +266,7 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 	std::cout << s_name << "\n";
 	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
 }
+
 
 void PrintKdTree()
 {
@@ -1171,7 +1177,7 @@ void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
 	//std::cout << f_impuls << "\n";
 	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * f_impuls));
 	ba_sphereB->XMV_velocity = XMVectorAdd(ba_sphereB->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * -f_impuls));
-
+	
 	float f_tmp = 2 * g_fSphereSize - XMVectorGetX(XMVector3Length(ba_sphereA->XMV_position - ba_sphereB->XMV_position));
 	ba_sphereA->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(f_tmp / 2);
 	ba_sphereB->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(-f_tmp / 2);
@@ -1224,18 +1230,18 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 
 	if (balls.size() > 1)
 	{
-		ik_innerKnot.ba_innerKnot = balls[(balls.size() / 2)];
+		ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
 		//std::cout << ik_innerKnot.ba_innerKnot.id << "\n";
 		if (depth % 3 == 0)
 		{
 			// x-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetX(balls[i].XMV_position) < XMVectorGetX(ik_innerKnot.ba_innerKnot.XMV_position))
+
+				if (XMVectorGetX(balls[i].XMV_position) < XMVectorGetX(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else if (XMVectorGetX(balls[i].XMV_position) > XMVectorGetX(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1250,11 +1256,11 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			// y-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetY(balls[i].XMV_position) < XMVectorGetY(ik_innerKnot.ba_innerKnot.XMV_position))
+			if (XMVectorGetY(v_ball[i].XMV_position) < XMVectorGetY(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetY(balls[i].XMV_position) < XMVectorGetY(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else if (XMVectorGetY(balls[i].XMV_position) > XMVectorGetY(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1269,11 +1275,11 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			// z-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetZ(balls[i].XMV_position) < XMVectorGetZ(ik_innerKnot.ba_innerKnot.XMV_position))
+
+				if (XMVectorGetZ(balls[i].XMV_position) < XMVectorGetZ(ik_innerKnot.ba_innerKnot->XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else if (XMVectorGetZ(balls[i].XMV_position) > XMVectorGetZ(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1286,9 +1292,9 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
-	else
+	else 
 	{
-		ik_innerKnot.ba_innerKnot = balls[0];
+		ik_innerKnot.ba_innerKnot = &balls[0];
 		ik_innerKnot.b_isLeaf = true;
 		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
@@ -1821,6 +1827,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			if (bAltDown) DXUTToggleFullScreen();
 			break;
 		}
+
 		// F8: Take screenshot
 		case VK_F8:
 		{
@@ -1837,6 +1844,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			std::wcout << L"Screenshot written to " << ss.str() << std::endl;
 			break;
 		}
+
 		// F10: Toggle video recording
 		case VK_F10:
 		{
@@ -1957,10 +1965,13 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			ApplyGravityToBalls();
 			if (g_bBiabNaive)
 			{
+				//myTimer.get();
 				NaiveCollisionDetection();
+				//std::cout << "Time passed with naive " << myTimer.update().time << " milliseconds\n";
 			}
 			else if (g_bBiabKDTree)
 			{
+				//myTimer.get();
 				// TODO: Delete the KD Tree
 				BuildKDTree(v_ball, 0);
 				if (b_once)
@@ -1969,10 +1980,13 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 					b_once = false;
 				}
 				//KDTreeCollisionDetection();
+				//std::cout << "Time passed with KD Tree" << myTimer.update().time << " milliseconds\n";
 			}
 			else if (g_bBiabUniformGrid)
 			{
+				//myTimer.get();
 				UniformGridCollisionDetection();
+				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
 			}
 			//RestrainingPosition();
 			UpdateBallPosition();
