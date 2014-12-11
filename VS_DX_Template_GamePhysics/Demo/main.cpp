@@ -194,7 +194,7 @@ struct Pairs
 //Inner Knot for KD Tree for MassCollisionDetection
 struct InnerKnot
 {
-	Ball* ba_innerKnot;
+	Ball ba_innerKnot;
 	InnerKnot* ba_smallerBall;
 	InnerKnot* ba_greaterBall;
 	bool b_isLeaf;
@@ -262,12 +262,19 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
 }
 
-//void PrintKdTree(InnerKnot* ik_innerKnot)
-//{
-//	PrintKdTree(ik_innerKnot->ba_smallerBall);
-//	std::cout << "smaller: " << ik_innerKnot->ba_innerKnot->id << "\n";
-//	PrintKdTree(ik_innerKnot->ba_greaterBall);
-//}
+void PrintKdTree()
+{
+	std::cout << kdt_KDTree.v_innerKnots.size() << "\n";
+	for (int i = 0; i < kdt_KDTree.v_innerKnots.size(); i++)
+	{
+		std::cout << "Knot: " << kdt_KDTree.v_innerKnots[i].ba_innerKnot.id << "\n";
+		if (kdt_KDTree.v_innerKnots[i].ba_smallerBall != nullptr)
+			std::cout << "Knot smaller: " << kdt_KDTree.v_innerKnots[i].ba_smallerBall << "\n";
+		if (kdt_KDTree.v_innerKnots[i].ba_greaterBall != nullptr)
+			std::cout << "Knot greater: " << kdt_KDTree.v_innerKnots[i].ba_greaterBall << "\n";
+		std::cout << "-------------------\n";
+	}
+}
 
 //transforms a XMVECTOR(w,x,y,z) to a quaternion(x,y,z,w)
 XMVECTOR VectorToQuaternion(XMVECTOR XMV_vector)
@@ -1094,57 +1101,57 @@ void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
 {
 	float f_offset = 0.5f - g_fSphereSize;
 
-		if (XMVectorGetY(ba_A->XMV_position) < -f_offset)
-		{
-			ba_A->XMV_velocity = XMVectorSetY(ba_A->XMV_velocity, -0.5f * XMVectorGetY(ba_A->XMV_velocity));
-			ba_A->XMV_position = XMVectorSetY(ba_A->XMV_position, -f_offset);
-		}
-		else if (XMVectorGetX(ba_A->XMV_position) < -f_offset)
-		{
-			ba_A->XMV_velocity = XMVectorSetX(ba_A->XMV_velocity, -0.5f * XMVectorGetX(ba_A->XMV_velocity));
-			ba_A->XMV_position = XMVectorSetX(ba_A->XMV_position, -f_offset);
-		}
-		else if (XMVectorGetX(ba_A->XMV_position) > f_offset)
-		{
-			ba_A->XMV_velocity = XMVectorSetX(ba_A->XMV_velocity, -0.5f * XMVectorGetX(ba_A->XMV_velocity));
-			ba_A->XMV_position = XMVectorSetX(ba_A->XMV_position, f_offset);
-		}
-		else if (XMVectorGetZ(ba_A->XMV_position) < -f_offset)
-		{
-			ba_A->XMV_velocity = XMVectorSetZ(ba_A->XMV_velocity, -0.5f * XMVectorGetZ(ba_A->XMV_velocity));
-			ba_A->XMV_position = XMVectorSetZ(ba_A->XMV_position, -f_offset);
-		}
-		else if (XMVectorGetZ(ba_A->XMV_position) > f_offset)
-		{
-			ba_A->XMV_velocity = XMVectorSetZ(ba_A->XMV_velocity, -0.5f * XMVectorGetZ(ba_A->XMV_velocity));
-			ba_A->XMV_position = XMVectorSetZ(ba_A->XMV_position, f_offset);
-		}
+	if (XMVectorGetY(ba_A->XMV_position) < -f_offset)
+	{
+		ba_A->XMV_velocity = XMVectorSetY(ba_A->XMV_velocity, -0.5f * XMVectorGetY(ba_A->XMV_velocity));
+		ba_A->XMV_position = XMVectorSetY(ba_A->XMV_position, -f_offset);
+	}
+	else if (XMVectorGetX(ba_A->XMV_position) < -f_offset)
+	{
+		ba_A->XMV_velocity = XMVectorSetX(ba_A->XMV_velocity, -0.5f * XMVectorGetX(ba_A->XMV_velocity));
+		ba_A->XMV_position = XMVectorSetX(ba_A->XMV_position, -f_offset);
+	}
+	else if (XMVectorGetX(ba_A->XMV_position) > f_offset)
+	{
+		ba_A->XMV_velocity = XMVectorSetX(ba_A->XMV_velocity, -0.5f * XMVectorGetX(ba_A->XMV_velocity));
+		ba_A->XMV_position = XMVectorSetX(ba_A->XMV_position, f_offset);
+	}
+	else if (XMVectorGetZ(ba_A->XMV_position) < -f_offset)
+	{
+		ba_A->XMV_velocity = XMVectorSetZ(ba_A->XMV_velocity, -0.5f * XMVectorGetZ(ba_A->XMV_velocity));
+		ba_A->XMV_position = XMVectorSetZ(ba_A->XMV_position, -f_offset);
+	}
+	else if (XMVectorGetZ(ba_A->XMV_position) > f_offset)
+	{
+		ba_A->XMV_velocity = XMVectorSetZ(ba_A->XMV_velocity, -0.5f * XMVectorGetZ(ba_A->XMV_velocity));
+		ba_A->XMV_position = XMVectorSetZ(ba_A->XMV_position, f_offset);
+	}
 
-		if (XMVectorGetY(ba_B->XMV_position) < -f_offset)
-		{
-			ba_B->XMV_velocity = XMVectorSetY(ba_B->XMV_velocity, -0.5f * XMVectorGetY(ba_B->XMV_velocity));
-			ba_B->XMV_position = XMVectorSetY(ba_B->XMV_position, -f_offset);
-		}
-		else if (XMVectorGetX(ba_B->XMV_position) < -f_offset)
-		{
-			ba_B->XMV_velocity = XMVectorSetX(ba_B->XMV_velocity, -0.5f * XMVectorGetX(ba_B->XMV_velocity));
-			ba_B->XMV_position = XMVectorSetX(ba_B->XMV_position, -f_offset);
-		}
-		else if (XMVectorGetX(ba_B->XMV_position) > f_offset)
-		{
-			ba_B->XMV_velocity = XMVectorSetX(ba_B->XMV_velocity, -0.5f * XMVectorGetX(ba_B->XMV_velocity));
-			ba_B->XMV_position = XMVectorSetX(ba_B->XMV_position, f_offset);
-		}
-		else if (XMVectorGetZ(ba_B->XMV_position) < -f_offset)
-		{
-			ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
-			ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, -f_offset);
-		}
-		else if (XMVectorGetZ(ba_B->XMV_position) > f_offset)
-		{
-			ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
-			ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, f_offset);
-		}
+	if (XMVectorGetY(ba_B->XMV_position) < -f_offset)
+	{
+		ba_B->XMV_velocity = XMVectorSetY(ba_B->XMV_velocity, -0.5f * XMVectorGetY(ba_B->XMV_velocity));
+		ba_B->XMV_position = XMVectorSetY(ba_B->XMV_position, -f_offset);
+	}
+	else if (XMVectorGetX(ba_B->XMV_position) < -f_offset)
+	{
+		ba_B->XMV_velocity = XMVectorSetX(ba_B->XMV_velocity, -0.5f * XMVectorGetX(ba_B->XMV_velocity));
+		ba_B->XMV_position = XMVectorSetX(ba_B->XMV_position, -f_offset);
+	}
+	else if (XMVectorGetX(ba_B->XMV_position) > f_offset)
+	{
+		ba_B->XMV_velocity = XMVectorSetX(ba_B->XMV_velocity, -0.5f * XMVectorGetX(ba_B->XMV_velocity));
+		ba_B->XMV_position = XMVectorSetX(ba_B->XMV_position, f_offset);
+	}
+	else if (XMVectorGetZ(ba_B->XMV_position) < -f_offset)
+	{
+		ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
+		ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, -f_offset);
+	}
+	else if (XMVectorGetZ(ba_B->XMV_position) > f_offset)
+	{
+		ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
+		ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, f_offset);
+	}
 }
 
 //Applies gravity to balls
@@ -1164,7 +1171,7 @@ void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
 	//std::cout << f_impuls << "\n";
 	ba_sphereA->XMV_velocity = XMVectorAdd(ba_sphereA->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * f_impuls));
 	ba_sphereB->XMV_velocity = XMVectorAdd(ba_sphereB->XMV_velocity, XMVectorScale(XMV_normal, 1 / g_fMass * g_fDamping * -f_impuls));
-	
+
 	float f_tmp = 2 * g_fSphereSize - XMVectorGetX(XMVector3Length(ba_sphereA->XMV_position - ba_sphereB->XMV_position));
 	ba_sphereA->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(f_tmp / 2);
 	ba_sphereB->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(-f_tmp / 2);
@@ -1211,24 +1218,24 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 	std::vector<Ball> v_greaterEqualBalls;
 
 	InnerKnot ik_innerKnot;
-	ik_innerKnot.ba_innerKnot = nullptr;
 	ik_innerKnot.ba_greaterBall = nullptr;
 	ik_innerKnot.ba_smallerBall = nullptr;
 	ik_innerKnot.b_isLeaf = false;
 
 	if (balls.size() > 1)
 	{
-		ik_innerKnot.ba_innerKnot = &balls[(balls.size() / 2)];
+		ik_innerKnot.ba_innerKnot = balls[(balls.size() / 2)];
+		//std::cout << ik_innerKnot.ba_innerKnot.id << "\n";
 		if (depth % 3 == 0)
 		{
 			// x-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetX(v_ball[i].XMV_position) < XMVectorGetX(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetX(balls[i].XMV_position) < XMVectorGetX(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else
+				else if (XMVectorGetX(balls[i].XMV_position) > XMVectorGetX(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1243,11 +1250,11 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			// y-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetY(v_ball[i].XMV_position) < XMVectorGetY(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetY(balls[i].XMV_position) < XMVectorGetY(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else
+				else if (XMVectorGetY(balls[i].XMV_position) > XMVectorGetY(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1257,16 +1264,16 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			if (!v_greaterEqualBalls.empty())
 				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
-		else
+		else if (depth % 3 == 2)
 		{
 			// z-axis
 			for (int i = 0; i < balls.size(); i++)
 			{
-				if (XMVectorGetZ(v_ball[i].XMV_position) < XMVectorGetZ(balls[balls.size() / 2].XMV_position))
+				if (XMVectorGetZ(balls[i].XMV_position) < XMVectorGetZ(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_smallerBalls.push_back(balls[i]);
 				}
-				else
+				else if (XMVectorGetZ(balls[i].XMV_position) > XMVectorGetZ(ik_innerKnot.ba_innerKnot.XMV_position))
 				{
 					v_greaterEqualBalls.push_back(balls[i]);
 				}
@@ -1276,12 +1283,14 @@ InnerKnot BuildKDTree(std::vector<Ball> balls, int depth)
 			if (!v_greaterEqualBalls.empty())
 				ik_innerKnot.ba_greaterBall = &(BuildKDTree(v_greaterEqualBalls, depth + 1));
 		}
+		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
-	else 
+	else
 	{
-		ik_innerKnot.ba_innerKnot = &balls[0];
+		ik_innerKnot.ba_innerKnot = balls[0];
 		ik_innerKnot.b_isLeaf = true;
+		kdt_KDTree.v_innerKnots.push_back(ik_innerKnot);
 		return ik_innerKnot;
 	}
 }
@@ -1812,7 +1821,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			if (bAltDown) DXUTToggleFullScreen();
 			break;
 		}
-			// F8: Take screenshot
+		// F8: Take screenshot
 		case VK_F8:
 		{
 			// Save current render target as png
@@ -1828,7 +1837,7 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
 			std::wcout << L"Screenshot written to " << ss.str() << std::endl;
 			break;
 		}
-			// F10: Toggle video recording
+		// F10: Toggle video recording
 		case VK_F10:
 		{
 			if (!g_pFFmpegVideoRecorder) {
@@ -1953,10 +1962,10 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			else if (g_bBiabKDTree)
 			{
 				// TODO: Delete the KD Tree
-				InnerKnot ik_tmp = BuildKDTree(v_ball, 0);
+				BuildKDTree(v_ball, 0);
 				if (b_once)
 				{
-					//PrintKdTree(&ik_tmp);
+					PrintKdTree();
 					b_once = false;
 				}
 				//KDTreeCollisionDetection();
