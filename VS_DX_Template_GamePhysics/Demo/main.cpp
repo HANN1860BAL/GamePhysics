@@ -362,7 +362,7 @@ void SetMass(float f_mass)
 	}
 }
 
-void Swap(InnerKnot *ik_A, InnerKnot *ik_B)
+void Swap(InnerKnot* ik_A, InnerKnot* ik_B)
 {
 	Ball* ba_tmp = new Ball();
 	memcpy(ba_tmp, ik_A->ba_innerKnot, sizeof(ba_tmp));
@@ -370,14 +370,15 @@ void Swap(InnerKnot *ik_A, InnerKnot *ik_B)
 	memcpy(ik_B->ba_innerKnot, ba_tmp, sizeof(ba_tmp));
 }
 
-InnerKnot* Median(InnerKnot *ik_start, InnerKnot *ik_end, int i_depth)
+InnerKnot* Median(InnerKnot* ik_start, InnerKnot* ik_end, int i_depth)
 {
 	if (ik_end <= ik_start) return NULL;
 	if (ik_end == ik_start + 1) return ik_start;
-
+	int i_counter = 0;
 	InnerKnot *ik_iterator, *ik_tmp, *ik_median = ik_start + (ik_end - ik_start) / 2;
 	XMVECTOR seperator;
 	while (true) {
+		i_counter++;
 		seperator = ik_median->ba_innerKnot->XMV_position;
 		Swap(ik_median, ik_end - 1);
 		for (ik_tmp = ik_iterator = ik_start; ik_iterator < ik_end; ik_iterator++)
@@ -412,7 +413,10 @@ InnerKnot* Median(InnerKnot *ik_start, InnerKnot *ik_end, int i_depth)
 		}
 		Swap(ik_tmp, ik_end - 1);
 
-		if (ik_tmp->ba_innerKnot == ik_median->ba_innerKnot)
+		if (i_counter > g_iNumSpheres * 2)
+			return ik_median;
+
+		if (ik_tmp == ik_median)
 			return ik_median;
 
 		if (ik_tmp > ik_median)	ik_end = ik_tmp;
@@ -1312,7 +1316,7 @@ void NaiveCollisionDetection(std::vector<Ball> v_ballNaive)
 	RestrainingPosition();
 }
 
-void NaiveCollisionDetection(std::vector<Pairs> v_ballNaive)
+void SolveKDTreeCollision(std::vector<Pairs> v_ballNaive)
 {
 	for (int i = 0; i < v_ballNaive.size(); i++)
 	{
@@ -1429,7 +1433,7 @@ InnerKnot* BuildKdTree(InnerKnot* ik_array, int i_length, int i_depth)
 	if ((ik_innerKnot = Median(ik_array, ik_array + i_length, i_depth)))
 	{
 		ik_innerKnot->ba_smallerBall = BuildKdTree(ik_array, ik_innerKnot - ik_array, i_depth);
-		ik_innerKnot->ba_greaterEqualBall = BuildKdTree(ik_innerKnot + 1, ik_array + i_length - (ik_innerKnot)-1, i_depth);
+		ik_innerKnot->ba_greaterEqualBall = BuildKdTree(ik_innerKnot + 1, ik_array + i_length - (ik_innerKnot) - 1, i_depth);
 	}
 
 	return ik_innerKnot;
@@ -1452,11 +1456,15 @@ void InitKdTree()
 {
 	//DestroyKdTree(kdt_KDTree.root_innerKnot);
 	v_pairs.clear();
+	//v_kdtree.clear();
 	delete[] a_innerKnot;
 	a_innerKnot = new InnerKnot[v_ball.size()];
-	for (int i = 0; i < v_ball.size() - 1; i++)
+	for (int i = 0; i < v_ball.size(); i++)
 	{
-		a_innerKnot[i] = InnerKnot(&v_ball[i]);
+		//InnerKnot ik_innerKnot;
+		//ik_innerKnot.ba_innerKnot = &v_ball[i];
+		//v_kdtree.push_back(ik_innerKnot);
+		a_innerKnot[i] = &v_ball[i];
 	}
 }
 
@@ -2117,17 +2125,18 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 	while (f_timeAcc > g_fTimeStepSize)
 	{
 		if (g_bBiab)
-		{
+		{			
+			ApplyGravityToBalls();
+
 			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
 			{
 				//InitBallarray();
 				InitBalls();
 				InitKdTree();
-				kdt_KDTree.root_innerKnot = BuildKdTree(a_innerKnot, sizeof(a_innerKnot) - 1, 0);
+				kdt_KDTree.root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
 				i_oldNum = g_iNumSpheres;
 				f_oldSize = g_fSphereSize;
 			}
-			ApplyGravityToBalls();
 			if (g_bBiabNaive)
 			{
 				//myTimer.get();
@@ -2137,12 +2146,13 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			else if (g_bBiabKDTree)
 			{
 				InitKdTree();
-				kdt_KDTree.root_innerKnot = BuildKdTree(a_innerKnot, sizeof(a_innerKnot) - 1, 0);
+				kdt_KDTree.root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
 				for (int i = 0; i < v_ball.size(); i++)
 				{
-					//KDTreeCollisionDetection(kdt_KDTree.root_innerKnot, &v_ball[i], 0);
+					KDTreeCollisionDetection(kdt_KDTree.root_innerKnot, &v_ball[i], 0);
 				}
-				NaiveCollisionDetection(v_pairs);
+				//RestrainingPosition();
+				SolveKDTreeCollision(v_pairs);
 
 				//myTimer.get();
 				if (b_once)
