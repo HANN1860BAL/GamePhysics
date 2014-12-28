@@ -115,18 +115,12 @@ struct InnerKnot
 	InnerKnot* ba_smallerBall;
 	InnerKnot* ba_greaterEqualBall;
 	XMFLOAT3 XMF3_seperator;
-	bool b_isLeaf;
-	std::vector<Ball*> v_leaf;
-	InnerKnot(Ball* ba_ball) : ba_innerKnot(ba_ball), ba_smallerBall(nullptr), ba_greaterEqualBall(nullptr), b_isLeaf(false){}
+	InnerKnot(Ball* ba_ball) : ba_innerKnot(ba_ball), ba_smallerBall(nullptr), ba_greaterEqualBall(nullptr){}
 	InnerKnot(){}
 };
 
 //KDTree for MassCollisionDetection
-struct KDTree
-{
-	InnerKnot* root_innerKnot;
-	//std::vector<Leaf> v_leafs;
-};
+
 
 // DXUT camera
 // NOTE: CModelViewerCamera does not only manage the standard view transformation/camera position 
@@ -193,9 +187,9 @@ float g_fImpulseConstant = 0.5f;
 //Balls in a box
 bool g_bBiab = true;
 bool g_bBiabNaive = false;
-bool g_bBiabKDTree = true;
-bool g_bBiabUniformGrid = false;
-bool g_bRandomDistrubution = true;
+bool g_bBiabKDTree = false;
+bool g_bBiabUniformGrid = true;
+bool g_bRandomDistrubution = false;
 float g_fcollisionScalar = 25.0f;
 
 //Global
@@ -206,9 +200,8 @@ static double f_timeAcc;
 int i_oldNum = 0;
 ID3D11Device* pd3dDeviceTweakbar;
 bool b_once = true;
-Ball* a_ball;
-InnerKnot* a_innerKnot;
-int i_recursiveCounter = -1;
+
+
 
 //usefull for initialisation
 XMVECTOR XMV_zero = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
@@ -220,9 +213,6 @@ FFmpeg* g_pFFmpegVideoRecorder = nullptr;
 
 
 
-
-// Globals for Balls in a box
-KDTree kdt_KDTree;
 //MuTime myTimer;
 
 //storage for MassSpringSystem
@@ -236,7 +226,12 @@ std::vector<Box> v_box;
 std::vector<Ball> v_ball;
 std::vector<InnerKnot> v_kdtree;
 std::vector<Pairs> v_pairs;
-
+InnerKnot* root_innerKnot; //rootpointer
+InnerKnot* a_innerKnot; //array
+Ball** a_ba_gridArray; //array
+int* a_i_occupied; //array
+#define IDX10(x,y,z,m) ((x) * (m) + (m) * ((y) * (m) + (z) * (m) * (m))) //macro for access of one-dimensional 3D-array with m elements each
+#define IDX(x,y,z,m) ((x) + (m) * ((y) + (z) * (m)))
 
 //Utility
 Point GetPointOf(int id)
@@ -374,6 +369,7 @@ InnerKnot* Median(InnerKnot* ik_start, InnerKnot* ik_end, int i_depth)
 {
 	if (ik_end <= ik_start) return NULL;
 	if (ik_end == ik_start + 1) return ik_start;
+
 	int i_counter = 0;
 	InnerKnot *ik_iterator, *ik_tmp, *ik_median = ik_start + (ik_end - ik_start) / 2;
 	XMVECTOR seperator;
@@ -1150,38 +1146,6 @@ void InitBalls()
 	}
 }
 
-void InitBallarray()
-{
-	delete[] a_ball;
-	a_ball = new Ball[g_iNumSpheres * g_iNumSpheres * g_iNumSpheres];
-	Ball ba_ball;
-	float f_distance = g_fSphereSize * 2;
-	int i_count = 0;
-
-	std::mt19937 eng;
-	std::uniform_real_distribution<float> randPos(-0.5f, 0.5f);
-
-	ba_ball.XMV_velocity = XMV_zero;
-	for (int i = 0; i < g_iNumSpheres; i++)
-	{
-		for (int k = 0; k < g_iNumSpheres; k++)
-		{
-			for (int l = 0; l < g_iNumSpheres; l++)
-			{
-				if (g_bRandomDistrubution)
-					ba_ball.XMV_position = XMVectorSet(randPos(eng), randPos(eng), randPos(eng), randPos(eng));
-				else
-					ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
-				ba_ball.id = i_count;
-				a_ball[i_count] = ba_ball;
-				//v_ball.push_back(ba_ball);
-				i_count++;
-			}
-		}
-	}
-}
-
-
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
 void RestrainingPosition()
 {
@@ -1299,31 +1263,31 @@ void BallCollisionImpuls(Ball* ba_sphereA, Ball* ba_sphereB)
 	ba_sphereB->XMV_position += XMVector3Normalize(ba_sphereA->XMV_position - ba_sphereB->XMV_position)*(-f_tmp / 2);
 }
 
-void NaiveCollisionDetection(std::vector<Ball> v_ballNaive)
+void NaiveCollisionDetection()
 {
-	for (int i = 0; i < v_ballNaive.size(); i++)
+	for (int i = 0; i < v_ball.size(); i++)
 	{
 		// k = i + 1
-		for (int k = i + 1; k < v_ballNaive.size(); k++)
+		for (int k = i + 1; k < v_ball.size(); k++)
 		{
-			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ballNaive[i].XMV_position, v_ballNaive[k].XMV_position))) < g_fSphereSize * 2)
+			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ball[i].XMV_position, v_ball[k].XMV_position))) < g_fSphereSize * 2)
 			{
-				BallCollisionImpuls(&v_ballNaive[i], &v_ballNaive[k]);
-				RestrainPositionOfTwoBalls(&v_ballNaive[i], &v_ballNaive[k]);
+				BallCollisionImpuls(&v_ball[i], &v_ball[k]);
+				RestrainPositionOfTwoBalls(&v_ball[i], &v_ball[k]);
 			}
 		}
 	}
 	RestrainingPosition();
 }
 
-void SolveKDTreeCollision(std::vector<Pairs> v_ballNaive)
+void SolveKDTreeCollision()
 {
-	for (int i = 0; i < v_ballNaive.size(); i++)
+	for (int i = 0; i < v_pairs.size(); i++)
 	{
-		if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ballNaive[i].ba_ballA->XMV_position, v_ballNaive[i].ba_ballB->XMV_position))) < g_fSphereSize * 2)
+		if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_pairs[i].ba_ballA->XMV_position, v_pairs[i].ba_ballB->XMV_position))) < g_fSphereSize * 2)
 		{
-			BallCollisionImpuls(v_ballNaive[i].ba_ballA, v_ballNaive[i].ba_ballB);
-			RestrainPositionOfTwoBalls(v_ballNaive[i].ba_ballA, v_ballNaive[i].ba_ballB);
+			BallCollisionImpuls(v_pairs[i].ba_ballA, v_pairs[i].ba_ballB);
+			RestrainPositionOfTwoBalls(v_pairs[i].ba_ballA, v_pairs[i].ba_ballB);
 		}
 	}
 	RestrainingPosition();
@@ -1433,41 +1397,54 @@ InnerKnot* BuildKdTree(InnerKnot* ik_array, int i_length, int i_depth)
 	if ((ik_innerKnot = Median(ik_array, ik_array + i_length, i_depth)))
 	{
 		ik_innerKnot->ba_smallerBall = BuildKdTree(ik_array, ik_innerKnot - ik_array, i_depth);
-		ik_innerKnot->ba_greaterEqualBall = BuildKdTree(ik_innerKnot + 1, ik_array + i_length - (ik_innerKnot) - 1, i_depth);
+		ik_innerKnot->ba_greaterEqualBall = BuildKdTree(ik_innerKnot + 1, ik_array + i_length - (ik_innerKnot)-1, i_depth);
 	}
 
 	return ik_innerKnot;
 }
 
-//void DestroyKdTree(InnerKnot* ik_root)
-//{
-//	if (ik_root == nullptr)
-//		return;
-//
-//	if (ik_root->ba_smallerBall != nullptr)
-//		DestroyKdTree(ik_root->ba_smallerBall);
-//	if (ik_root->ba_greaterEqualBall != nullptr)
-//		DestroyKdTree(ik_root->ba_greaterEqualBall);
-//	delete &ik_root;
-//	ik_root = nullptr;
-//}
-
 void InitKdTree()
 {
-	//DestroyKdTree(kdt_KDTree.root_innerKnot);
 	v_pairs.clear();
-	//v_kdtree.clear();
-	delete[] a_innerKnot;
 	a_innerKnot = new InnerKnot[v_ball.size()];
 	for (int i = 0; i < v_ball.size(); i++)
 	{
-		//InnerKnot ik_innerKnot;
-		//ik_innerKnot.ba_innerKnot = &v_ball[i];
-		//v_kdtree.push_back(ik_innerKnot);
 		a_innerKnot[i] = &v_ball[i];
 	}
+
 }
 
+void InitGrid()
+{
+	float i_size = 2 * g_fSphereSize; //size of grid cell
+	int i_anz = 1 / (2 * g_fSphereSize); //number of cells in a row (cubic)
+	int i_lengthGrid = pow(i_anz * 10, 3); //necessary length of array
+	int i_lengthOccupied = pow(i_anz, 3);
+	delete[] a_ba_gridArray;
+	delete[] a_i_occupied;
+	a_ba_gridArray = new Ball*[i_lengthGrid];
+	a_i_occupied = new int[i_lengthOccupied];
+	for (int i = 0; i < v_ball.size(); i++)
+	{
+		XMFLOAT3 XMF3_tmp;
+		XMStoreFloat3(&XMF3_tmp, v_ball[i].XMV_position);
+		int i_x = (0.5f + XMF3_tmp.x) / i_size;
+		int i_y = (0.5f + XMF3_tmp.y) / i_size;
+		int i_z = (0.5f + XMF3_tmp.z) / i_size;
+		Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
+		for (ba_iterator; ba_iterator < ba_iterator + 10; i++)
+		{
+			if (ba_iterator == nullptr)
+			{
+				ba_iterator = &v_ball[i];
+				a_i_occupied[IDX(i_x, i_y, i_y, i_anz)]++;
+				break;
+			}
+		}
+	}
+
+	//ToDo: testing, if the balls are in the right bin. Solve problem with occupied-array. Write collisiondetection function
+}
 
 
 
@@ -2125,7 +2102,7 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 	while (f_timeAcc > g_fTimeStepSize)
 	{
 		if (g_bBiab)
-		{			
+		{
 			ApplyGravityToBalls();
 
 			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
@@ -2133,40 +2110,30 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 				//InitBallarray();
 				InitBalls();
 				InitKdTree();
-				kdt_KDTree.root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
+				root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
 				i_oldNum = g_iNumSpheres;
 				f_oldSize = g_fSphereSize;
 			}
 			if (g_bBiabNaive)
 			{
 				//myTimer.get();
-				NaiveCollisionDetection(v_ball);
+				NaiveCollisionDetection();
 				//std::cout << "Time passed with naive " << myTimer.update().time << " milliseconds\n";
 			}
 			else if (g_bBiabKDTree)
 			{
-				InitKdTree();
-				kdt_KDTree.root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
+				v_pairs.clear();
+				root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
 				for (int i = 0; i < v_ball.size(); i++)
 				{
-					KDTreeCollisionDetection(kdt_KDTree.root_innerKnot, &v_ball[i], 0);
+					KDTreeCollisionDetection(root_innerKnot, &v_ball[i], 0);
 				}
-				//RestrainingPosition();
-				SolveKDTreeCollision(v_pairs);
+				RestrainingPosition();
+				SolveKDTreeCollision();
 
 				//myTimer.get();
 				if (b_once)
 				{
-					//for (int i = 0; i < v_pairs.size(); i++)
-					//{
-					//	XMFLOAT3 XMF3_tmp1;
-					//	XMFLOAT3 XMF3_tmp2;
-					//	XMStoreFloat3(&XMF3_tmp1, v_pairs[i].ba_ballA->XMV_position);
-					//	std::cout << "A: " << XMF3_tmp1.x << " " << XMF3_tmp1.y << " " << XMF3_tmp1.z << " ";
-					//	XMStoreFloat3(&XMF3_tmp2, v_pairs[i].ba_ballB->XMV_position);
-					//	std::cout << " B: " << XMF3_tmp2.x << " " << XMF3_tmp2.y << " " << XMF3_tmp2.z << "\n";
-					//	std::cout << "Distance: " << XMVectorGetX(XMVector3Length(v_pairs[i].ba_ballA->XMV_position - v_pairs[i].ba_ballB->XMV_position)) << "\n\n";
-					//}
 					//PrintKdTree(kdt_KDTree.root_innerKnot);
 					b_once = false;
 				}
@@ -2176,10 +2143,11 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			else if (g_bBiabUniformGrid)
 			{
 				//myTimer.get();
+				InitGrid();
 				UniformGridCollisionDetection();
 				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
 			}
-			//RestrainingPosition();
+
 			UpdateBallPosition();
 		}
 		else if (g_bMassSpringSystem)
