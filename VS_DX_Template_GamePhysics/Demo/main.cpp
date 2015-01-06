@@ -114,7 +114,7 @@ struct InnerKnot
 	Ball* ba_innerKnot;
 	InnerKnot* ba_smallerBall;
 	InnerKnot* ba_greaterEqualBall;
-	XMFLOAT3 XMF3_seperator;
+	float f_depth;
 	InnerKnot(Ball* ba_ball) : ba_innerKnot(ba_ball), ba_smallerBall(nullptr), ba_greaterEqualBall(nullptr){}
 	InnerKnot(){}
 };
@@ -163,7 +163,7 @@ XMFLOAT3 g_vfMovableObjectPos = XMFLOAT3(0, 0, 0);
 // TweakAntBar GUI variables
 
 //Multiple usage
-int   g_iNumSpheres = 2; //number of spheres in a row
+int   g_iNumSpheres = 3; //number of spheres in a row
 float g_fSphereSize = 0.05f;
 float g_fDamping = 0.001f;
 float g_fMass = 1.0f;
@@ -189,7 +189,7 @@ bool g_bBiab = true;
 bool g_bBiabNaive = false;
 bool g_bBiabKDTree = false;
 bool g_bBiabUniformGrid = true;
-bool g_bRandomDistrubution = false;
+bool g_bRandomDistrubution = true;
 float g_fcollisionScalar = 25.0f;
 
 //Global
@@ -201,6 +201,9 @@ int i_oldNum = 0;
 ID3D11Device* pd3dDeviceTweakbar;
 bool b_once = true;
 
+float f_size;
+int i_anz;
+int i_lengthGrid;
 
 
 //usefull for initialisation
@@ -229,7 +232,8 @@ std::vector<Pairs> v_pairs;
 InnerKnot* root_innerKnot; //rootpointer
 InnerKnot* a_innerKnot; //array
 Ball** a_ba_gridArray; //array
-int* a_i_occupied; //array
+std::vector<int> v_i_occupied; //vector
+
 #define IDX10(x,y,z,m) ((x) * (m) + (m) * ((y) * (m) + (z) * (m) * (m))) //macro for access of one-dimensional 3D-array with m elements each
 #define IDX(x,y,z,m) ((x) + (m) * ((y) + (z) * (m)))
 
@@ -260,8 +264,17 @@ void PrintVector(XMVECTOR XMV_vector, std::string s_name)
 {
 	XMFLOAT4 XMF4_tmp;
 	XMStoreFloat4(&XMF4_tmp, XMV_vector);
-	std::cout << s_name << "\n";
-	std::cout << "w: " << std::setw(15) << XMF4_tmp.w << " x: " << std::setw(15) << XMF4_tmp.x << " y: " << std::setw(15) << XMF4_tmp.y << " z: " << std::setw(15) << XMF4_tmp.z << "\n";
+	std::cout << s_name << ": ";
+	std::cout << "\tW: " << std::setw(10) << XMF4_tmp.w << "  X: " << std::setw(10) << XMF4_tmp.x << "  Y: " << std::setw(10) << XMF4_tmp.y << "  Z: " << std::setw(10) << XMF4_tmp.z << "\n";
+}
+
+void PrintArray(InnerKnot* start, InnerKnot* end)
+{
+	for (; start < end; start++)
+	{
+		std::cout << "Knot: " << start->ba_innerKnot->id << "\n";
+		PrintVector(start->ba_innerKnot->XMV_position, "position:");
+	}
 }
 
 void PrintKdTree(InnerKnot* ik_innerKnot)
@@ -272,16 +285,18 @@ void PrintKdTree(InnerKnot* ik_innerKnot)
 		return;
 	}
 
-	std::cout << "Knot: " << ik_innerKnot->ba_innerKnot->id << "\n";
-
+	std::cout << "Knot: " << ik_innerKnot->ba_innerKnot->id << " depth: " << ik_innerKnot->f_depth << "\n";
+	PrintVector(ik_innerKnot->ba_innerKnot->XMV_position, "position:");
 
 	if (ik_innerKnot->ba_smallerBall != nullptr)
 	{
 		std::cout << "Knot smaller: " << ik_innerKnot->ba_smallerBall->ba_innerKnot->id << "\n";
+		PrintVector(ik_innerKnot->ba_smallerBall->ba_innerKnot->XMV_position, "position:");
 	}
 	if (ik_innerKnot->ba_greaterEqualBall != nullptr)
 	{
 		std::cout << "Knot greater: " << ik_innerKnot->ba_greaterEqualBall->ba_innerKnot->id << "\n";
+		PrintVector(ik_innerKnot->ba_greaterEqualBall->ba_innerKnot->XMV_position, "position:");
 	}
 
 	std::cout << "-------------------\n";
@@ -359,65 +374,74 @@ void SetMass(float f_mass)
 
 void Swap(InnerKnot* ik_A, InnerKnot* ik_B)
 {
-	Ball* ba_tmp = new Ball();
-	memcpy(ba_tmp, ik_A->ba_innerKnot, sizeof(ba_tmp));
-	memcpy(ik_A->ba_innerKnot, ik_B->ba_innerKnot, sizeof(ba_tmp));
-	memcpy(ik_B->ba_innerKnot, ba_tmp, sizeof(ba_tmp));
+	InnerKnot* ik_tmp = new InnerKnot();
+	//ik_tmp = ik_A;
+	//ik_A = ik_B;
+	//ik_B = ik_tmp;
+	memcpy(ik_tmp, ik_A, sizeof(ik_tmp));
+	memcpy(ik_A, ik_B, sizeof(ik_tmp));
+	memcpy(ik_B, ik_tmp, sizeof(ik_tmp));
+	delete ik_tmp;
 }
 
 InnerKnot* Median(InnerKnot* ik_start, InnerKnot* ik_end, int i_depth)
 {
 	if (ik_end <= ik_start) return NULL;
 	if (ik_end == ik_start + 1) return ik_start;
-
+	//std::cout << "depth: " << i_depth << "\n";
+	//PrintArray(ik_start, ik_end);
+	//std::cout << "!!!!!!!!!!!!!\n";
 	int i_counter = 0;
 	InnerKnot *ik_iterator, *ik_tmp, *ik_median = ik_start + (ik_end - ik_start) / 2;
-	XMVECTOR seperator;
-	while (true) {
-		i_counter++;
-		seperator = ik_median->ba_innerKnot->XMV_position;
-		Swap(ik_median, ik_end - 1);
-		for (ik_tmp = ik_iterator = ik_start; ik_iterator < ik_end; ik_iterator++)
+	XMVECTOR seperator = ik_median->ba_innerKnot->XMV_position;
+	ik_median->f_depth = i_depth;
+	//while (true) {
+	//	i_counter++;
+	Swap(ik_median, ik_end - 1);
+	for (ik_tmp = ik_iterator = ik_start; ik_iterator < ik_end; ik_iterator++)
+	{
+		if (i_depth % 3 == 0)
 		{
-			if (i_depth % 3 == 0)
+			if (XMVectorGetX(ik_iterator->ba_innerKnot->XMV_position) < XMVectorGetX(seperator))
 			{
-				if (XMVectorGetX(ik_iterator->ba_innerKnot->XMV_position) < XMVectorGetX(seperator))
-				{
-					if (ik_iterator != ik_tmp)
-						Swap(ik_iterator, ik_tmp);
-					ik_tmp++;
-				}
-			}
-			else if (i_depth % 1 == 0)
-			{
-				if (XMVectorGetY(ik_iterator->ba_innerKnot->XMV_position) < XMVectorGetY(seperator))
-				{
-					if (ik_iterator != ik_tmp)
-						Swap(ik_iterator, ik_tmp);
-					ik_tmp++;
-				}
-			}
-			else if (i_depth % 2 == 0)
-			{
-				if (XMVectorGetZ(ik_iterator->ba_innerKnot->XMV_position) < XMVectorGetZ(seperator))
-				{
-					if (ik_iterator != ik_tmp)
-						Swap(ik_iterator, ik_tmp);
-					ik_tmp++;
-				}
+				if (ik_iterator != ik_tmp)
+					Swap(ik_iterator, ik_tmp);
+				ik_tmp++;
 			}
 		}
-		Swap(ik_tmp, ik_end - 1);
-
-		if (i_counter > g_iNumSpheres * 2)
-			return ik_median;
-
-		if (ik_tmp == ik_median)
-			return ik_median;
-
-		if (ik_tmp > ik_median)	ik_end = ik_tmp;
-		else		ik_start = ik_tmp;
+		else if (i_depth % 3 == 1)
+		{
+			if (XMVectorGetY(ik_iterator->ba_innerKnot->XMV_position) < XMVectorGetY(seperator))
+			{
+				if (ik_iterator != ik_tmp)
+					Swap(ik_iterator, ik_tmp);
+				ik_tmp++;
+			}
+		}
+		else if (i_depth % 3 == 2)
+		{
+			if (XMVectorGetZ(ik_iterator->ba_innerKnot->XMV_position) < XMVectorGetZ(seperator))
+			{
+				if (ik_iterator != ik_tmp)
+					Swap(ik_iterator, ik_tmp);
+				ik_tmp++;
+			}
+		}
 	}
+	Swap(ik_tmp, ik_end - 1);
+	//PrintArray(ik_start, ik_end);
+	//std::cout << "$$$$$$$$$$$$\n";
+	return ik_median;
+
+	//if (ik_tmp == ik_median)
+	//	return ik_median;
+
+	//if (ik_tmp > ik_median)	ik_end = ik_tmp;
+	//else		ik_start = ik_tmp;
+
+	//if (i_counter > 100)
+	//	return ik_median;
+	//}
 }
 
 
@@ -1135,13 +1159,54 @@ void InitBalls()
 			for (int l = 0; l < g_iNumSpheres; l++)
 			{
 				if (g_bRandomDistrubution)
-					ba_ball.XMV_position = XMVectorSet(randPos(eng), randPos(eng), randPos(eng), randPos(eng));
+					ba_ball.XMV_position = XMVectorSet(randPos(eng), randPos(eng), randPos(eng), 0.0f);
 				else
 					ba_ball.XMV_position = XMVectorSet(-0.25f + i * f_distance, -0.4f + k * f_distance, -0.25f + l * f_distance, 0.0f);
 				ba_ball.id = i_count;
 				v_ball.push_back(ba_ball);
 				i_count++;
 			}
+		}
+	}
+}
+
+void DeleteGridEntry(Ball* ba_ball)
+{
+	XMFLOAT3 XMF3_tmp;
+	XMStoreFloat3(&XMF3_tmp, ba_ball->XMV_position);
+	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
+	int i_y = (0.5f + XMF3_tmp.y) / f_size;
+	int i_z = (0.5f + XMF3_tmp.z) / f_size;
+
+	Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
+	Ball* ba_endIterator = ba_iterator + 10;
+	for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+	{
+		if (ba_iterator == ba_ball)
+		{
+			ba_iterator = nullptr;
+			break;
+		}
+	}
+}
+
+void InsertGridEntry(Ball* ba_ball)
+{
+	XMFLOAT3 XMF3_tmp;
+	XMStoreFloat3(&XMF3_tmp, ba_ball->XMV_position);
+	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
+	int i_y = (0.5f + XMF3_tmp.y) / f_size;
+	int i_z = (0.5f + XMF3_tmp.z) / f_size;
+
+	Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
+	Ball* ba_endIterator = ba_iterator + 10;
+	for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+	{
+		if (ba_iterator == nullptr)
+		{
+			ba_iterator = ba_ball;
+			v_i_occupied.push_back(IDX10(i_x, i_y, i_z, i_anz));
+			break;
 		}
 	}
 }
@@ -1153,6 +1218,8 @@ void RestrainingPosition()
 
 	for (int i = 0; i < v_ball.size(); i++)
 	{
+		DeleteGridEntry(&v_ball[i]);
+
 		if (XMVectorGetY(v_ball[i].XMV_position) < -f_offset)
 		{
 			v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -0.5f * XMVectorGetY(v_ball[i].XMV_velocity));
@@ -1180,12 +1247,17 @@ void RestrainingPosition()
 		}
 		//if (XMVectorGetY(v_ball[i].XMV_position) > 0.5f)
 		//	v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -0.98f * XMVectorGetY(v_ball[i].XMV_velocity));
+
+		InsertGridEntry(&v_ball[i]);
 	}
 }
 
 void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
 {
 	float f_offset = 0.5f - g_fSphereSize;
+
+	DeleteGridEntry(ba_A);
+	DeleteGridEntry(ba_B);
 
 	if (XMVectorGetY(ba_A->XMV_position) < -f_offset)
 	{
@@ -1238,6 +1310,9 @@ void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
 		ba_B->XMV_velocity = XMVectorSetZ(ba_B->XMV_velocity, -0.5f * XMVectorGetZ(ba_B->XMV_velocity));
 		ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, f_offset);
 	}
+
+	InsertGridEntry(ba_A);
+	InsertGridEntry(ba_B);
 }
 
 //Applies gravity to balls
@@ -1268,7 +1343,7 @@ void NaiveCollisionDetection()
 	for (int i = 0; i < v_ball.size(); i++)
 	{
 		// k = i + 1
-		for (int k = i + 1; k < v_ball.size(); k++)
+		for (int k = 0; k < v_ball.size(); k++)
 		{
 			if (XMVectorGetX(XMVector3Length(XMVectorSubtract(v_ball[i].XMV_position, v_ball[k].XMV_position))) < g_fSphereSize * 2)
 			{
@@ -1280,6 +1355,7 @@ void NaiveCollisionDetection()
 	RestrainingPosition();
 }
 
+//tests pairs of possible collisions for collision
 void SolveKDTreeCollision()
 {
 	for (int i = 0; i < v_pairs.size(); i++)
@@ -1293,6 +1369,7 @@ void SolveKDTreeCollision()
 	RestrainingPosition();
 }
 
+//"inserts" a ball and tests for collision with others
 void KDTreeCollisionDetection(InnerKnot* ik_root, Ball* ba_ball, int i_depth)
 {
 	if (ik_root == nullptr)
@@ -1302,8 +1379,10 @@ void KDTreeCollisionDetection(InnerKnot* ik_root, Ball* ba_ball, int i_depth)
 
 	if (i_depth % 3 == 0)
 	{
+		//is the ball touching the seperating axis?
 		if (abs(XMVectorGetX(ba_ball->XMV_position) - XMVectorGetX(ik_root->ba_innerKnot->XMV_position)) > 2 * g_fSphereSize)
 		{
+			//if not, test on wich side of the axis the ball is
 			if (XMVectorGetX(ba_ball->XMV_position) < XMVectorGetX(ik_root->ba_innerKnot->XMV_position))
 			{
 				if (ik_root->ba_smallerBall != nullptr)
@@ -1314,6 +1393,7 @@ void KDTreeCollisionDetection(InnerKnot* ik_root, Ball* ba_ball, int i_depth)
 		}
 		else
 		{
+			//if the ball is touching the axis, add the seperating ball and the testing ball to the collision pairs and call both sides recursivly
 			Pairs p_pair;
 			p_pair.ba_ballA = ba_ball;
 			p_pair.ba_ballB = ik_root->ba_innerKnot;
@@ -1324,7 +1404,7 @@ void KDTreeCollisionDetection(InnerKnot* ik_root, Ball* ba_ball, int i_depth)
 				KDTreeCollisionDetection(ik_root->ba_greaterEqualBall, ba_ball, i_depth++);
 		}
 	}
-	else if (i_depth % 1 == 0)
+	if (i_depth % 3 == 1)
 	{
 		if (abs(XMVectorGetY(ba_ball->XMV_position) - XMVectorGetY(ik_root->ba_innerKnot->XMV_position)) > 2 * g_fSphereSize)
 		{
@@ -1348,7 +1428,7 @@ void KDTreeCollisionDetection(InnerKnot* ik_root, Ball* ba_ball, int i_depth)
 				KDTreeCollisionDetection(ik_root->ba_greaterEqualBall, ba_ball, i_depth++);
 		}
 	}
-	else if (i_depth % 2 == 0)
+	if (i_depth % 3 == 2)
 	{
 		if (abs(XMVectorGetZ(ba_ball->XMV_position) - XMVectorGetZ(ik_root->ba_innerKnot->XMV_position)) > 2 * g_fSphereSize)
 		{
@@ -1374,19 +1454,108 @@ void KDTreeCollisionDetection(InnerKnot* ik_root, Ball* ba_ball, int i_depth)
 	}
 }
 
+void DeleteOccupation()
+{
+	for (int i = 0; i < v_i_occupied.size(); i++)
+	{
+		Ball* ba_iterator = a_ba_gridArray[v_i_occupied[i]];
+		Ball* ba_endIterator = ba_iterator + 10;
+		bool b_empty = true;
+		for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+		{
+			if (ba_iterator != nullptr)
+			{
+				b_empty = false;
+				break;
+			}
+		}
+		if (b_empty)
+			v_i_occupied.erase(v_i_occupied.begin() + i);
+	}
+}
+
 void UniformGridCollisionDetection()
 {
+	std::vector<int> v_i_indices;
+	for (int u = 0; u < v_i_occupied.size(); u++)
+	{
+		int i_right = i_anz * 10;
+		int i_left = i_anz * 10 + 1;
+		std::cout << "1\n";
+		v_i_indices.push_back(v_i_occupied[u]);
+		if ((v_i_occupied[u] + 10) < i_lengthGrid && (v_i_occupied[u] + 10) % i_right != 0 (v_i_occupied[u] + 10) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + 10);
+		if ((v_i_occupied[u] - 10) > 0 && (v_i_occupied[u] - 10) % i_right != 0 (v_i_occupied[u] - 10) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - 10);
+		if ((v_i_occupied[u] + i_anz) < i_lengthGrid && (v_i_occupied[u] + i_anz) % i_right != 0 (v_i_occupied[u] + i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + i_anz);
+		if ((v_i_occupied[u] + 10 + i_anz) < i_lengthGrid && (v_i_occupied[u] + 10 + i_anz) % i_right != 0 (v_i_occupied[u] + 10 + i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + 10 + i_anz);
+		if ((v_i_occupied[u] - 10 + i_anz) > 0 && (v_i_occupied[u] - 10 + i_anz) % i_right != 0 (v_i_occupied[u] - 10 + i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - 10 + i_anz);
+		if ((v_i_occupied[u] - i_anz) > 0 && (v_i_occupied[u] - i_anz) % i_right != 0 (v_i_occupied[u] - i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - i_anz);
+		if ((v_i_occupied[u] + 10 - i_anz) < i_lengthGrid && (v_i_occupied[u] + 10 - i_anz) % i_right != 0 (v_i_occupied[u] + 10 - i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + 10 - i_anz);
+		if ((v_i_occupied[u] - 10 - i_anz) > 0 && (v_i_occupied[u] - 10 - i_anz) % i_right != 0 (v_i_occupied[u] - 10 - i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - 10 - i_anz);
+		std::cout << "2\n";
 
+		int i_indicesSize = v_i_indices.size();
+		for (int i = 0; i < i_indicesSize; i++)
+		{
+			if (v_i_indices[i] + pow(i_anz, 2) < i_lengthGrid) v_i_indices.push_back(v_i_indices[i] + pow(i_anz, 2));
+			if (v_i_indices[i] - pow(i_anz, 2) > 0) v_i_indices.push_back(v_i_indices[i] - pow(i_anz, 2));
+		}
+		std::cout << "3\n";
+
+		i_indicesSize = v_i_indices.size();
+		for (int i = 0; i < i_indicesSize; i++)
+		{
+			bool b_contains = false;
+			for (int k = 0; k < v_i_occupied.size(); k++)
+			{
+				if (v_i_indices[i] == v_i_occupied[k])
+					b_contains = true;
+			}
+			if (b_contains == false)
+			{
+				v_i_indices.erase(v_i_indices.begin() + i);
+				i--;
+				i_indicesSize--;
+			}
+		}
+		std::cout << "4\n";
+
+		Ball* ba_it = a_ba_gridArray[v_i_occupied[u]];
+		Ball* ba_it_end = ba_it + 10;
+
+		for (; ba_it < ba_it_end; ba_it++)
+		{
+			for (int m = 0; m < v_i_indices.size(); m++)
+			{
+				Ball* ba_it_neighbour = a_ba_gridArray[v_i_indices[m]];
+				Ball* ba_it_end_neighbour = ba_it_neighbour + 10;
+				for (; ba_it_end_neighbour < ba_it_end_neighbour; ba_it_neighbour++)
+				{
+					if (XMVectorGetX(XMVector3Length(XMVectorSubtract(ba_it->XMV_position, ba_it_neighbour->XMV_position))) < g_fSphereSize * 2)
+					{
+						BallCollisionImpuls(ba_it, ba_it_neighbour);
+						RestrainPositionOfTwoBalls(ba_it, ba_it_neighbour);
+					}
+				}
+			}
+		}
+	}
+	std::cout << "5\n";
+
+	v_i_indices.clear();
+	RestrainingPosition();
 }
 
 void UpdateBallPosition()
 {
 	for (int i = 0; i < v_ball.size(); i++)
 	{
+		DeleteGridEntry(&v_ball[i]);
 		v_ball[i].XMV_position = XMVectorAdd(v_ball[i].XMV_position, v_ball[i].XMV_velocity);
+		InsertGridEntry(&v_ball[i]);
 	}
 }
 
+//build KDTree, median knots are not in the leefs, leefs does not contain alls possible collisions
 InnerKnot* BuildKdTree(InnerKnot* ik_array, int i_length, int i_depth)
 {
 	if (i_length == 0)
@@ -1396,6 +1565,7 @@ InnerKnot* BuildKdTree(InnerKnot* ik_array, int i_length, int i_depth)
 
 	if ((ik_innerKnot = Median(ik_array, ik_array + i_length, i_depth)))
 	{
+		i_depth++;
 		ik_innerKnot->ba_smallerBall = BuildKdTree(ik_array, ik_innerKnot - ik_array, i_depth);
 		ik_innerKnot->ba_greaterEqualBall = BuildKdTree(ik_innerKnot + 1, ik_array + i_length - (ik_innerKnot)-1, i_depth);
 	}
@@ -1416,34 +1586,40 @@ void InitKdTree()
 
 void InitGrid()
 {
-	float i_size = 2 * g_fSphereSize; //size of grid cell
-	int i_anz = 1 / (2 * g_fSphereSize); //number of cells in a row (cubic)
-	int i_lengthGrid = pow(i_anz * 10, 3); //necessary length of array
-	int i_lengthOccupied = pow(i_anz, 3);
 	delete[] a_ba_gridArray;
-	delete[] a_i_occupied;
+	v_i_occupied.clear();
+
+	f_size = 2 * g_fSphereSize; //size of grid cell
+	i_anz = 1 / (2 * g_fSphereSize); //number of cells in a row
+	i_lengthGrid = pow(i_anz * 10, 3); //necessary length of array
+
 	a_ba_gridArray = new Ball*[i_lengthGrid];
-	a_i_occupied = new int[i_lengthOccupied];
+
+	for (int i = 0; i < i_lengthGrid; i++)
+	{
+		a_ba_gridArray[i] = nullptr;
+	}
+
 	for (int i = 0; i < v_ball.size(); i++)
 	{
 		XMFLOAT3 XMF3_tmp;
 		XMStoreFloat3(&XMF3_tmp, v_ball[i].XMV_position);
-		int i_x = (0.5f + XMF3_tmp.x) / i_size;
-		int i_y = (0.5f + XMF3_tmp.y) / i_size;
-		int i_z = (0.5f + XMF3_tmp.z) / i_size;
+		int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
+		int i_y = (0.5f + XMF3_tmp.y) / f_size;
+		int i_z = (0.5f + XMF3_tmp.z) / f_size;
+
 		Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
-		for (ba_iterator; ba_iterator < ba_iterator + 10; i++)
+		Ball* ba_endIterator = ba_iterator + 10;
+		for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
 		{
 			if (ba_iterator == nullptr)
 			{
 				ba_iterator = &v_ball[i];
-				a_i_occupied[IDX(i_x, i_y, i_y, i_anz)]++;
+				v_i_occupied.push_back(IDX10(i_x, i_y, i_z, i_anz));
 				break;
 			}
 		}
 	}
-
-	//ToDo: testing, if the balls are in the right bin. Solve problem with occupied-array. Write collisiondetection function
 }
 
 
@@ -2107,13 +2283,29 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 
 			if (g_iNumSpheres != i_oldNum || g_fSphereSize != f_oldSize)
 			{
-				//InitBallarray();
-				InitBalls();
-				InitKdTree();
-				root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
-				i_oldNum = g_iNumSpheres;
-				f_oldSize = g_fSphereSize;
+				if (g_bBiabKDTree)
+				{
+					InitBalls();
+					InitKdTree();
+					root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
+					i_oldNum = g_iNumSpheres;
+					f_oldSize = g_fSphereSize;
+				}
+				if (g_bBiabNaive)
+				{
+					InitBalls();
+					i_oldNum = g_iNumSpheres;
+					f_oldSize = g_fSphereSize;
+				}
+				if (g_bBiabUniformGrid)
+				{
+					InitBalls();
+					InitGrid();
+					i_oldNum = g_iNumSpheres;
+					f_oldSize = g_fSphereSize;
+				}
 			}
+
 			if (g_bBiabNaive)
 			{
 				//myTimer.get();
@@ -2124,31 +2316,32 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			{
 				v_pairs.clear();
 				root_innerKnot = BuildKdTree(a_innerKnot, v_ball.size(), 0);
+				//PrintKdTree(root_innerKnot);
+				//std::cout << "%%%%%%%%%%%%%%%%%%%%%\n";
+				//NaiveCollisionDetection();
+
 				for (int i = 0; i < v_ball.size(); i++)
 				{
 					KDTreeCollisionDetection(root_innerKnot, &v_ball[i], 0);
 				}
-				RestrainingPosition();
 				SolveKDTreeCollision();
 
 				//myTimer.get();
-				if (b_once)
-				{
-					//PrintKdTree(kdt_KDTree.root_innerKnot);
-					b_once = false;
-				}
-				//KDTreeCollisionDetection();
+
 				//std::cout << "Time passed with KD Tree" << myTimer.update().time << " milliseconds\n";
 			}
 			else if (g_bBiabUniformGrid)
 			{
 				//myTimer.get();
 				InitGrid();
+				std::cout << "after initGrid\n";
 				UniformGridCollisionDetection();
+				std::cout << "after UniformGridCollisionDetection\n";
 				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
 			}
 
 			UpdateBallPosition();
+			DeleteOccupation();
 		}
 		else if (g_bMassSpringSystem)
 		{
