@@ -98,6 +98,7 @@ struct Ball
 	XMVECTOR XMV_position;
 	XMVECTOR XMV_velocity;
 	int id;
+	int i_gridId;
 	Ball() : XMV_position(XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f)), XMV_velocity(XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f)), id(-1){}
 };
 
@@ -185,11 +186,11 @@ bool g_bInteractionRight = false;
 float g_fImpulseConstant = 0.5f;
 
 //Balls in a box
-bool g_bBiab = true;
+bool g_bBiab = false;
 bool g_bBiabNaive = false;
 bool g_bBiabKDTree = false;
-bool g_bBiabUniformGrid = true;
-bool g_bRandomDistrubution = true;
+bool g_bBiabUniformGrid = false;
+bool g_bRandomDistrubution = false;
 float g_fcollisionScalar = 25.0f;
 
 //Global
@@ -308,6 +309,19 @@ void PrintKdTree(InnerKnot* ik_innerKnot)
 	if (ik_innerKnot->ba_greaterEqualBall != nullptr)
 	{
 		PrintKdTree(ik_innerKnot->ba_greaterEqualBall);
+	}
+}
+
+void PrintGrid(Ball** grid)
+{
+	std::cout << "printig\n";
+	for (int i = 0; i < i_lengthGrid; i++)
+	{
+		if (grid[i] != nullptr)
+		{
+			std::cout << "Index: " << i << " Ball: " << grid[i]->id << "\n";
+			PrintVector(grid[i]->XMV_position, "Position:");
+		}
 	}
 }
 
@@ -1172,22 +1186,33 @@ void InitBalls()
 
 void DeleteGridEntry(Ball* ba_ball)
 {
-	XMFLOAT3 XMF3_tmp;
-	XMStoreFloat3(&XMF3_tmp, ba_ball->XMV_position);
-	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
-	int i_y = (0.5f + XMF3_tmp.y) / f_size;
-	int i_z = (0.5f + XMF3_tmp.z) / f_size;
-
-	Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
-	Ball* ba_endIterator = ba_iterator + 10;
-	for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+	int i_nextGridIndex = (ba_ball->i_gridId - ba_ball->i_gridId % 10) + 10;
+	a_ba_gridArray[ba_ball->i_gridId] == nullptr;
+	for (int i = ba_ball->i_gridId; i < i_nextGridIndex; i++)
 	{
-		if (ba_iterator == ba_ball)
+		if (a_ba_gridArray[i + 1] != nullptr)
 		{
-			ba_iterator = nullptr;
+			a_ba_gridArray[i] = a_ba_gridArray[i + 1];
+			a_ba_gridArray[i + 1] = nullptr;
+		}
+		else
+		{
+			if (i % 10 == 0)
+			{
+				for (int k = 0; k < v_i_occupied.size(); k++)
+				{
+					if (v_i_occupied[k] == i)
+					{
+						v_i_occupied.erase(v_i_occupied.begin() + k);
+						break;
+					}
+				}
+			}
 			break;
 		}
+
 	}
+	ba_ball->i_gridId = -1;
 }
 
 void InsertGridEntry(Ball* ba_ball)
@@ -1197,18 +1222,26 @@ void InsertGridEntry(Ball* ba_ball)
 	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
 	int i_y = (0.5f + XMF3_tmp.y) / f_size;
 	int i_z = (0.5f + XMF3_tmp.z) / f_size;
+	int i_index = IDX10(i_x, i_y, i_z, i_anz);
 
-	Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
-	Ball* ba_endIterator = ba_iterator + 10;
-	for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+	for (; i_index < i_index + 10; i_index++)
 	{
-		if (ba_iterator == nullptr)
+		if (a_ba_gridArray[i_index] == nullptr)
 		{
-			ba_iterator = ba_ball;
-			v_i_occupied.push_back(IDX10(i_x, i_y, i_z, i_anz));
+			ba_ball->i_gridId = i_index;
+			a_ba_gridArray[i_index] = ba_ball;
 			break;
 		}
 	}
+
+	bool b_contains = false;
+	for (int i = 0; i < v_i_occupied.size(); i++)
+	{
+		if (v_i_occupied[i] == i_index)
+			b_contains = true;
+	}
+	if (!b_contains)
+		v_i_occupied.push_back(i_index);
 }
 
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
@@ -1218,7 +1251,8 @@ void RestrainingPosition()
 
 	for (int i = 0; i < v_ball.size(); i++)
 	{
-		DeleteGridEntry(&v_ball[i]);
+		if (g_bBiabUniformGrid)
+			DeleteGridEntry(&v_ball[i]);
 
 		if (XMVectorGetY(v_ball[i].XMV_position) < -f_offset)
 		{
@@ -1248,16 +1282,19 @@ void RestrainingPosition()
 		//if (XMVectorGetY(v_ball[i].XMV_position) > 0.5f)
 		//	v_ball[i].XMV_velocity = XMVectorSetY(v_ball[i].XMV_velocity, -0.98f * XMVectorGetY(v_ball[i].XMV_velocity));
 
-		InsertGridEntry(&v_ball[i]);
+		if (g_bBiabUniformGrid)
+			InsertGridEntry(&v_ball[i]);
 	}
 }
 
 void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
 {
 	float f_offset = 0.5f - g_fSphereSize;
-
-	DeleteGridEntry(ba_A);
-	DeleteGridEntry(ba_B);
+	if (g_bBiabUniformGrid)
+	{
+		DeleteGridEntry(ba_A);
+		DeleteGridEntry(ba_B);
+	}
 
 	if (XMVectorGetY(ba_A->XMV_position) < -f_offset)
 	{
@@ -1311,8 +1348,11 @@ void RestrainPositionOfTwoBalls(Ball* ba_A, Ball* ba_B)
 		ba_B->XMV_position = XMVectorSetZ(ba_B->XMV_position, f_offset);
 	}
 
-	InsertGridEntry(ba_A);
-	InsertGridEntry(ba_B);
+	if (g_bBiabUniformGrid)
+	{
+		InsertGridEntry(ba_A);
+		InsertGridEntry(ba_B);
+	}
 }
 
 //Applies gravity to balls
@@ -1458,90 +1498,123 @@ void DeleteOccupation()
 {
 	for (int i = 0; i < v_i_occupied.size(); i++)
 	{
-		Ball* ba_iterator = a_ba_gridArray[v_i_occupied[i]];
-		Ball* ba_endIterator = ba_iterator + 10;
+		int i_iterator = v_i_occupied[i];
 		bool b_empty = true;
-		for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+		for (; i_iterator < i_iterator + 10; i_iterator++)
 		{
-			if (ba_iterator != nullptr)
+			if (a_ba_gridArray[i_iterator] != nullptr)
 			{
 				b_empty = false;
 				break;
 			}
 		}
-		if (b_empty)
+		if (b_empty){
 			v_i_occupied.erase(v_i_occupied.begin() + i);
+		}
+	}
+}
+
+void StoreNeighbourCells(std::vector<int>* v_i_indices, int i_iterator)
+{
+	int i_lengthOfPlain = pow(i_anz, 2);
+
+	v_i_indices->push_back(v_i_occupied[i_iterator]);
+
+	if ((v_i_occupied[i_iterator] + i_anz) < i_lengthGrid && (int)((v_i_occupied[i_iterator] + i_anz) / i_lengthOfPlain) == (int)((v_i_occupied[i_iterator]) / i_lengthOfPlain))
+		v_i_indices->push_back(v_i_occupied[i_iterator] + i_anz);
+	if ((v_i_occupied[i_iterator] - i_anz) >= 0 && (int)((v_i_occupied[i_iterator] - i_anz) / i_lengthOfPlain) == (int)((v_i_occupied[i_iterator]) / i_lengthOfPlain))
+		v_i_indices->push_back(v_i_occupied[i_iterator] - i_anz);
+
+	if ((v_i_occupied[i_iterator] + 10) < i_lengthGrid && (v_i_occupied[i_iterator] + 10) % i_anz != 0)
+	{
+		v_i_indices->push_back(v_i_occupied[i_iterator] + 10);
+		if ((v_i_occupied[i_iterator] + 10 + i_anz) < i_lengthGrid && (int)((v_i_occupied[i_iterator] + 10 + i_anz) / i_lengthOfPlain) == (int)((v_i_occupied[i_iterator] + 10) / i_lengthOfPlain))
+			v_i_indices->push_back(v_i_occupied[i_iterator] + 10 + i_anz);
+		if ((v_i_occupied[i_iterator] + 10 - i_anz) >= 0 && (int)((v_i_occupied[i_iterator] + 10 - i_anz) / i_lengthOfPlain) == (int)((v_i_occupied[i_iterator] + 10) / i_lengthOfPlain))
+			v_i_indices->push_back(v_i_occupied[i_iterator] + 10 - i_anz);
+	}
+
+
+	if ((v_i_occupied[i_iterator] - 10) >= 0 && (v_i_occupied[i_iterator]) % i_anz != 0)
+	{
+		v_i_indices->push_back(v_i_occupied[i_iterator] - 10);
+		if ((v_i_occupied[i_iterator] - 10 + i_anz) < i_lengthGrid && (int)((v_i_occupied[i_iterator] - 10 + i_anz) / i_lengthOfPlain) == (int)((v_i_occupied[i_iterator] - 10) / i_lengthOfPlain))
+			v_i_indices->push_back(v_i_occupied[i_iterator] - 10 + i_anz);
+		if ((v_i_occupied[i_iterator] - 10 - i_anz) >= 0 && (int)((v_i_occupied[i_iterator] - 10 - i_anz) / i_lengthOfPlain) == (int)((v_i_occupied[i_iterator] - 10) / i_lengthOfPlain))
+			v_i_indices->push_back(v_i_occupied[i_iterator] - 10 - i_anz);
+	}
+
+	int i_indicesSize = v_i_indices->size();
+	for (int k = 0; k < i_indicesSize; k++)
+	{
+		if (v_i_indices->at(k) + (int)pow(i_anz, 2) < i_lengthGrid)
+			v_i_indices->push_back(v_i_indices->at(k) + (int)pow(i_anz, 2));
+
+		if (v_i_indices->at(k) - (int)pow(i_anz, 2) >= 0)
+			v_i_indices->push_back(v_i_indices->at(k) - (int)pow(i_anz, 2));
 	}
 }
 
 void UniformGridCollisionDetection()
 {
+	std::cout << "1\n";
 	std::vector<int> v_i_indices;
-	for (int u = 0; u < v_i_occupied.size(); u++)
+	for (int i = 0; i < v_i_occupied.size(); i++)
 	{
-		int i_right = i_anz * 10;
-		int i_left = i_anz * 10 + 1;
-		std::cout << "1\n";
-		v_i_indices.push_back(v_i_occupied[u]);
-		if ((v_i_occupied[u] + 10) < i_lengthGrid && (v_i_occupied[u] + 10) % i_right != 0 (v_i_occupied[u] + 10) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + 10);
-		if ((v_i_occupied[u] - 10) > 0 && (v_i_occupied[u] - 10) % i_right != 0 (v_i_occupied[u] - 10) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - 10);
-		if ((v_i_occupied[u] + i_anz) < i_lengthGrid && (v_i_occupied[u] + i_anz) % i_right != 0 (v_i_occupied[u] + i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + i_anz);
-		if ((v_i_occupied[u] + 10 + i_anz) < i_lengthGrid && (v_i_occupied[u] + 10 + i_anz) % i_right != 0 (v_i_occupied[u] + 10 + i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + 10 + i_anz);
-		if ((v_i_occupied[u] - 10 + i_anz) > 0 && (v_i_occupied[u] - 10 + i_anz) % i_right != 0 (v_i_occupied[u] - 10 + i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - 10 + i_anz);
-		if ((v_i_occupied[u] - i_anz) > 0 && (v_i_occupied[u] - i_anz) % i_right != 0 (v_i_occupied[u] - i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - i_anz);
-		if ((v_i_occupied[u] + 10 - i_anz) < i_lengthGrid && (v_i_occupied[u] + 10 - i_anz) % i_right != 0 (v_i_occupied[u] + 10 - i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] + 10 - i_anz);
-		if ((v_i_occupied[u] - 10 - i_anz) > 0 && (v_i_occupied[u] - 10 - i_anz) % i_right != 0 (v_i_occupied[u] - 10 - i_anz) % i_left != 0)	v_i_indices.push_back(v_i_occupied[u] - 10 - i_anz);
 		std::cout << "2\n";
-
-		int i_indicesSize = v_i_indices.size();
-		for (int i = 0; i < i_indicesSize; i++)
-		{
-			if (v_i_indices[i] + pow(i_anz, 2) < i_lengthGrid) v_i_indices.push_back(v_i_indices[i] + pow(i_anz, 2));
-			if (v_i_indices[i] - pow(i_anz, 2) > 0) v_i_indices.push_back(v_i_indices[i] - pow(i_anz, 2));
-		}
+		StoreNeighbourCells(&v_i_indices, i);
 		std::cout << "3\n";
 
-		i_indicesSize = v_i_indices.size();
-		for (int i = 0; i < i_indicesSize; i++)
+		//Delete empty neighbourCells from v_i_indices
+		for (int k = 0; k < v_i_indices.size(); k++)
 		{
 			bool b_contains = false;
-			for (int k = 0; k < v_i_occupied.size(); k++)
+			for (int m = 0; m < v_i_occupied.size(); m++)
 			{
-				if (v_i_indices[i] == v_i_occupied[k])
+				if (v_i_indices[k] == v_i_occupied[m])
+				{
 					b_contains = true;
+					break;
+				}
 			}
-			if (b_contains == false)
+			if (!b_contains)
 			{
-				v_i_indices.erase(v_i_indices.begin() + i);
-				i--;
-				i_indicesSize--;
+				v_i_indices.erase(v_i_indices.begin() + k);
 			}
 		}
 		std::cout << "4\n";
 
-		Ball* ba_it = a_ba_gridArray[v_i_occupied[u]];
-		Ball* ba_it_end = ba_it + 10;
+		int i_iterator = v_i_occupied[i];
+		int i_iteratorEnd = i_iterator + 10;
 
-		for (; ba_it < ba_it_end; ba_it++)
+		for (; i_iterator < i_iteratorEnd; i_iterator++)
 		{
-			for (int m = 0; m < v_i_indices.size(); m++)
+			if (a_ba_gridArray[i_iterator] == nullptr)
+				break;
+			for (int k = 0; k < v_i_indices.size(); k++)
 			{
-				Ball* ba_it_neighbour = a_ba_gridArray[v_i_indices[m]];
-				Ball* ba_it_end_neighbour = ba_it_neighbour + 10;
-				for (; ba_it_end_neighbour < ba_it_end_neighbour; ba_it_neighbour++)
+				int i_iterator_neighbour = v_i_indices[k];
+				int i_iterator_end_neighbour = v_i_indices[k] + 10;
+
+				for (; i_iterator_neighbour < i_iterator_end_neighbour; i_iterator_neighbour++)
 				{
-					if (XMVectorGetX(XMVector3Length(XMVectorSubtract(ba_it->XMV_position, ba_it_neighbour->XMV_position))) < g_fSphereSize * 2)
+					if (a_ba_gridArray[i_iterator_neighbour] == nullptr)
+						break;
+					else if (i_iterator != i_iterator_neighbour)
 					{
-						BallCollisionImpuls(ba_it, ba_it_neighbour);
-						RestrainPositionOfTwoBalls(ba_it, ba_it_neighbour);
+						if (XMVectorGetX(XMVector3Length(XMVectorSubtract(a_ba_gridArray[i_iterator]->XMV_position, a_ba_gridArray[i_iterator_neighbour]->XMV_position))) < g_fSphereSize * 2)
+						{
+							BallCollisionImpuls(a_ba_gridArray[i_iterator], a_ba_gridArray[i_iterator_neighbour]);
+							RestrainPositionOfTwoBalls(a_ba_gridArray[i_iterator], a_ba_gridArray[i_iterator_neighbour]);
+						}
 					}
 				}
 			}
 		}
-	}
-	std::cout << "5\n";
+		std::cout << "5\n";
 
-	v_i_indices.clear();
+		v_i_indices.clear();
+	}
 	RestrainingPosition();
 }
 
@@ -1549,9 +1622,11 @@ void UpdateBallPosition()
 {
 	for (int i = 0; i < v_ball.size(); i++)
 	{
-		DeleteGridEntry(&v_ball[i]);
+		if (g_bBiabUniformGrid)
+			DeleteGridEntry(&v_ball[i]);
 		v_ball[i].XMV_position = XMVectorAdd(v_ball[i].XMV_position, v_ball[i].XMV_velocity);
-		InsertGridEntry(&v_ball[i]);
+		if (g_bBiabUniformGrid)
+			InsertGridEntry(&v_ball[i]);
 	}
 }
 
@@ -1590,7 +1665,7 @@ void InitGrid()
 	v_i_occupied.clear();
 
 	f_size = 2 * g_fSphereSize; //size of grid cell
-	i_anz = 1 / (2 * g_fSphereSize); //number of cells in a row
+	i_anz = 1 / (f_size) * 10; //number of cells in a row
 	i_lengthGrid = pow(i_anz * 10, 3); //necessary length of array
 
 	a_ba_gridArray = new Ball*[i_lengthGrid];
@@ -1607,19 +1682,24 @@ void InitGrid()
 		int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
 		int i_y = (0.5f + XMF3_tmp.y) / f_size;
 		int i_z = (0.5f + XMF3_tmp.z) / f_size;
+		int i_index = IDX10(i_x, i_y, i_z, i_anz);
 
-		Ball* ba_iterator = a_ba_gridArray[IDX10(i_x, i_y, i_z, i_anz)];
-		Ball* ba_endIterator = ba_iterator + 10;
-		for (ba_iterator; ba_iterator < ba_endIterator; ba_iterator++)
+		bool b_contains = false;
+		for (; i_index < i_index + 10; i_index++)
 		{
-			if (ba_iterator == nullptr)
+			if (a_ba_gridArray[i_index] == nullptr)
 			{
-				ba_iterator = &v_ball[i];
-				v_i_occupied.push_back(IDX10(i_x, i_y, i_z, i_anz));
+				v_ball[i].i_gridId = i_index;
+				a_ba_gridArray[i_index] = &v_ball[i];
 				break;
 			}
+			else
+				b_contains = true;
 		}
+		if (!b_contains)
+			v_i_occupied.push_back(i_index);
 	}
+	//PrintGrid(a_ba_gridArray);
 }
 
 
@@ -2333,15 +2413,15 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			else if (g_bBiabUniformGrid)
 			{
 				//myTimer.get();
-				InitGrid();
-				std::cout << "after initGrid\n";
+				//std::cout << "after initGrid\n";
 				UniformGridCollisionDetection();
-				std::cout << "after UniformGridCollisionDetection\n";
+				//std::cout << "after UniformGridCollisionDetection\n";
 				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
 			}
 
 			UpdateBallPosition();
-			DeleteOccupation();
+			//if (g_bBiabUniformGrid)
+			//	DeleteOccupation();
 		}
 		else if (g_bMassSpringSystem)
 		{
