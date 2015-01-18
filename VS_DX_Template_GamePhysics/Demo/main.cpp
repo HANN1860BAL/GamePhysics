@@ -186,11 +186,11 @@ bool g_bInteractionRight = false;
 float g_fImpulseConstant = 0.5f;
 
 //Balls in a box
-bool g_bBiab = false;
+bool g_bBiab = true;
 bool g_bBiabNaive = false;
 bool g_bBiabKDTree = false;
-bool g_bBiabUniformGrid = false;
-bool g_bRandomDistrubution = false;
+bool g_bBiabUniformGrid = true;
+bool g_bRandomDistrubution = true;
 float g_fcollisionScalar = 25.0f;
 
 //Global
@@ -389,13 +389,19 @@ void SetMass(float f_mass)
 void Swap(InnerKnot* ik_A, InnerKnot* ik_B)
 {
 	InnerKnot* ik_tmp = new InnerKnot();
-	//ik_tmp = ik_A;
-	//ik_A = ik_B;
-	//ik_B = ik_tmp;
 	memcpy(ik_tmp, ik_A, sizeof(ik_tmp));
 	memcpy(ik_A, ik_B, sizeof(ik_tmp));
 	memcpy(ik_B, ik_tmp, sizeof(ik_tmp));
 	delete ik_tmp;
+}
+
+void Swap(Ball* ba_A, Ball* ba_B)
+{
+	Ball* ba_tmp = new Ball();
+	memcpy(ba_tmp, ba_A, sizeof(ba_tmp));
+	memcpy(ba_A, ba_B, sizeof(ba_tmp));
+	memcpy(ba_B, ba_tmp, sizeof(ba_tmp));
+	delete ba_tmp;
 }
 
 InnerKnot* Median(InnerKnot* ik_start, InnerKnot* ik_end, int i_depth)
@@ -1184,15 +1190,31 @@ void InitBalls()
 	}
 }
 
+int CalculateIndex(Ball* ba_ball)
+{
+	XMFLOAT3 XMF3_tmp;
+	XMStoreFloat3(&XMF3_tmp, ba_ball->XMV_position);
+	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
+	int i_y = (0.5f + XMF3_tmp.y) / f_size;
+	int i_z = (0.5f + XMF3_tmp.z) / f_size;
+	if (i_x == 10) i_x = 9;
+	if (i_y == 10) i_y = 9;
+	if (i_z == 10) i_z = 9;
+	return IDX10(i_x, i_y, i_z, 10);
+}
+
 void DeleteGridEntry(Ball* ba_ball)
 {
 	int i_nextGridIndex = (ba_ball->i_gridId - ba_ball->i_gridId % 10) + 10;
-	a_ba_gridArray[ba_ball->i_gridId] == nullptr;
+	//std::cout << "deleteIndex: " << ba_ball->i_gridId << "\n";
+
+	a_ba_gridArray[ba_ball->i_gridId] = nullptr;
 	for (int i = ba_ball->i_gridId; i < i_nextGridIndex; i++)
 	{
 		if (a_ba_gridArray[i + 1] != nullptr)
 		{
 			a_ba_gridArray[i] = a_ba_gridArray[i + 1];
+			a_ba_gridArray[i]->i_gridId--;
 			a_ba_gridArray[i + 1] = nullptr;
 		}
 		else
@@ -1210,25 +1232,21 @@ void DeleteGridEntry(Ball* ba_ball)
 			}
 			break;
 		}
-
 	}
 	ba_ball->i_gridId = -1;
 }
 
 void InsertGridEntry(Ball* ba_ball)
 {
-	XMFLOAT3 XMF3_tmp;
-	XMStoreFloat3(&XMF3_tmp, ba_ball->XMV_position);
-	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
-	int i_y = (0.5f + XMF3_tmp.y) / f_size;
-	int i_z = (0.5f + XMF3_tmp.z) / f_size;
-	int i_index = IDX10(i_x, i_y, i_z, i_anz);
+	int i_index = CalculateIndex(ba_ball);
+	int i_nextIndex = i_index + 10;
 
-	for (; i_index < i_index + 10; i_index++)
+	for (; i_index < i_nextIndex; i_index++)
 	{
 		if (a_ba_gridArray[i_index] == nullptr)
 		{
 			ba_ball->i_gridId = i_index;
+			//std::cout << "insertIndex: " << i_index << "\n";
 			a_ba_gridArray[i_index] = ba_ball;
 			break;
 		}
@@ -1237,11 +1255,14 @@ void InsertGridEntry(Ball* ba_ball)
 	bool b_contains = false;
 	for (int i = 0; i < v_i_occupied.size(); i++)
 	{
-		if (v_i_occupied[i] == i_index)
+		if (v_i_occupied[i] == i_nextIndex - 10)
+		{
 			b_contains = true;
+			break;
+		}
 	}
 	if (!b_contains)
-		v_i_occupied.push_back(i_index);
+		v_i_occupied.push_back(i_nextIndex - 10);
 }
 
 //Restraining Balls to th drawn cube(0.5, 0.5, 0.5)
@@ -1557,13 +1578,10 @@ void StoreNeighbourCells(std::vector<int>* v_i_indices, int i_iterator)
 
 void UniformGridCollisionDetection()
 {
-	std::cout << "1\n";
 	std::vector<int> v_i_indices;
 	for (int i = 0; i < v_i_occupied.size(); i++)
 	{
-		std::cout << "2\n";
 		StoreNeighbourCells(&v_i_indices, i);
-		std::cout << "3\n";
 
 		//Delete empty neighbourCells from v_i_indices
 		for (int k = 0; k < v_i_indices.size(); k++)
@@ -1580,12 +1598,27 @@ void UniformGridCollisionDetection()
 			if (!b_contains)
 			{
 				v_i_indices.erase(v_i_indices.begin() + k);
+				k--;
 			}
 		}
-		std::cout << "4\n";
 
 		int i_iterator = v_i_occupied[i];
 		int i_iteratorEnd = i_iterator + 10;
+
+		if (v_i_occupied.size() > pow(g_iNumSpheres, 3))
+		{
+			PrintGrid(a_ba_gridArray);
+			int xx = 0;
+		}
+
+		for (int z = 0; z < v_ball.size(); z++)
+		{
+			if (v_ball[z].i_gridId < 0)
+			{
+				PrintGrid(a_ba_gridArray);
+				int xx = 0;
+			}
+		}
 
 		for (; i_iterator < i_iteratorEnd; i_iterator++)
 		{
@@ -1611,11 +1644,12 @@ void UniformGridCollisionDetection()
 				}
 			}
 		}
-		std::cout << "5\n";
 
 		v_i_indices.clear();
 	}
 	RestrainingPosition();
+	//PrintGrid(a_ba_gridArray);
+	//int xzy = 0;
 }
 
 void UpdateBallPosition()
@@ -1666,7 +1700,7 @@ void InitGrid()
 
 	f_size = 2 * g_fSphereSize; //size of grid cell
 	i_anz = 1 / (f_size) * 10; //number of cells in a row
-	i_lengthGrid = pow(i_anz * 10, 3); //necessary length of array
+	i_lengthGrid = pow(i_anz, 3); //necessary length of array
 
 	a_ba_gridArray = new Ball*[i_lengthGrid];
 
@@ -1677,12 +1711,7 @@ void InitGrid()
 
 	for (int i = 0; i < v_ball.size(); i++)
 	{
-		XMFLOAT3 XMF3_tmp;
-		XMStoreFloat3(&XMF3_tmp, v_ball[i].XMV_position);
-		int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
-		int i_y = (0.5f + XMF3_tmp.y) / f_size;
-		int i_z = (0.5f + XMF3_tmp.z) / f_size;
-		int i_index = IDX10(i_x, i_y, i_z, i_anz);
+		int i_index = CalculateIndex(&v_ball[i]);
 
 		bool b_contains = false;
 		for (; i_index < i_index + 10; i_index++)
@@ -1690,6 +1719,7 @@ void InitGrid()
 			if (a_ba_gridArray[i_index] == nullptr)
 			{
 				v_ball[i].i_gridId = i_index;
+				//std::cout << "initIndex: " << i_index << "\n";
 				a_ba_gridArray[i_index] = &v_ball[i];
 				break;
 			}
