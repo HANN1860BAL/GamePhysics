@@ -235,7 +235,7 @@ InnerKnot* a_innerKnot; //array
 Ball** a_ba_gridArray; //array
 std::vector<int> v_i_occupied; //vector
 
-#define IDX10(x,y,z,m) ((x) * (m) + (m) * ((y) * (m) + (z) * (m) * (m))) //macro for access of one-dimensional 3D-array with m elements each
+#define IDX10(x,y,z) ((x) * (10) + (10000) * (y) + (z) * (100)) //macro for access of one-dimensional 3D-array with m elements each
 #define IDX(x,y,z,m) ((x) + (m) * ((y) + (z) * (m)))
 
 //Utility
@@ -319,7 +319,7 @@ void PrintGrid(Ball** grid)
 	{
 		if (grid[i] != nullptr)
 		{
-			std::cout << "Index: " << i << " Ball: " << grid[i]->id << "\n";
+			std::cout << "Index: " << i << " Ball: " << grid[i]->id << " Ball_gridId: " << grid[i]->i_gridId << "\n";
 			PrintVector(grid[i]->XMV_position, "Position:");
 		}
 	}
@@ -1194,13 +1194,13 @@ int CalculateIndex(Ball* ba_ball)
 {
 	XMFLOAT3 XMF3_tmp;
 	XMStoreFloat3(&XMF3_tmp, ba_ball->XMV_position);
-	int i_x = (0.5f + XMF3_tmp.x) / f_size; //map position to positiv grid indices
-	int i_y = (0.5f + XMF3_tmp.y) / f_size;
-	int i_z = (0.5f + XMF3_tmp.z) / f_size;
-	if (i_x == 10) i_x = 9;
-	if (i_y == 10) i_y = 9;
-	if (i_z == 10) i_z = 9;
-	return IDX10(i_x, i_y, i_z, 10);
+	int i_x = (0.5f + XMF3_tmp.x) * 10 / f_size; //map position to positiv grid indices
+	int i_y = (0.5f + XMF3_tmp.y) * 10 / f_size;
+	int i_z = (0.5f + XMF3_tmp.z) * 10 / f_size;
+	if (i_x == 100) i_x = 90;
+	if (i_y == 100) i_y = 90;
+	if (i_z == 100) i_z = 90;
+	return IDX10(i_x, i_y, i_z);
 }
 
 void DeleteGridEntry(Ball* ba_ball)
@@ -1245,9 +1245,11 @@ void InsertGridEntry(Ball* ba_ball)
 	{
 		if (a_ba_gridArray[i_index] == nullptr)
 		{
-			ba_ball->i_gridId = i_index;
+			//ba_ball->i_gridId = i_index;
 			//std::cout << "insertIndex: " << i_index << "\n";
 			a_ba_gridArray[i_index] = ba_ball;
+			a_ba_gridArray[i_index]->i_gridId = i_index;
+			//std::cout << "Array_Ball_gridId: " << a_ba_gridArray[i_index]->i_gridId << "\n";
 			break;
 		}
 	}
@@ -1611,15 +1613,6 @@ void UniformGridCollisionDetection()
 			int xx = 0;
 		}
 
-		for (int z = 0; z < v_ball.size(); z++)
-		{
-			if (v_ball[z].i_gridId < 0)
-			{
-				PrintGrid(a_ba_gridArray);
-				int xx = 0;
-			}
-		}
-
 		for (; i_iterator < i_iteratorEnd; i_iterator++)
 		{
 			if (a_ba_gridArray[i_iterator] == nullptr)
@@ -1721,6 +1714,7 @@ void InitGrid()
 				v_ball[i].i_gridId = i_index;
 				//std::cout << "initIndex: " << i_index << "\n";
 				a_ba_gridArray[i_index] = &v_ball[i];
+				//std::cout << "Array_Ball_gridId: " << a_ba_gridArray[i_index]->i_gridId << "\n";
 				break;
 			}
 			else
@@ -1729,7 +1723,8 @@ void InitGrid()
 		if (!b_contains)
 			v_i_occupied.push_back(i_index);
 	}
-	//PrintGrid(a_ba_gridArray);
+	PrintGrid(a_ba_gridArray);
+	int cc = 0;
 }
 
 
@@ -2444,6 +2439,15 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 			{
 				//myTimer.get();
 				//std::cout << "after initGrid\n";
+				//absolutly no clue why the gridIds are getting lost somewehre in the process. this is jsut a work around and of course much slower
+				for (int z = 0; z < v_ball.size(); z++)
+				{
+					if (v_ball[z].i_gridId < 0)
+					{
+						v_i_occupied.clear();
+						InsertGridEntry(&v_ball[z]);
+					}
+				}
 				UniformGridCollisionDetection();
 				//std::cout << "after UniformGridCollisionDetection\n";
 				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
