@@ -192,6 +192,7 @@ bool g_bBiabKDTree = false;
 bool g_bBiabUniformGrid = true;
 bool g_bRandomDistrubution = true;
 float g_fcollisionScalar = 25.0f;
+int g_iMarkedBall = -1;
 
 //Global
 bool b_start = true;
@@ -237,6 +238,8 @@ std::vector<int> v_i_occupied; //vector
 
 #define IDX10(x,y,z) ((x) * (10) + (10000) * (y) + (z) * (100)) //macro for access of one-dimensional 3D-array with m elements each
 #define IDX(x,y,z,m) ((x) + (m) * ((y) + (z) * (m)))
+
+int debugTime = 0;
 
 //Utility
 Point GetPointOf(int id)
@@ -655,6 +658,7 @@ void InitTweakBar(ID3D11Device* pd3dDevice)
 		TwAddSeparator(g_pSpecialTweakBar, "SeparatorBallsInABox2", "");
 		TwAddVarRW(g_pSpecialTweakBar, "Collision Scalar", TW_TYPE_FLOAT, &g_fcollisionScalar, "min=0");
 		TwAddVarRW(g_pSpecialTweakBar, "Damping", TW_TYPE_FLOAT, &g_fDamping, "min=0 max=1");
+		TwAddVarRW(g_pSpecialTweakBar, "Marked Ball", TW_TYPE_INT32, &g_iMarkedBall, "min=0");
 	}
 }
 
@@ -1240,7 +1244,8 @@ void InsertGridEntry(Ball* ba_ball)
 {
 	int i_index = CalculateIndex(ba_ball);
 	int i_nextIndex = i_index + 10;
-
+	if (i_index < 0)
+		return;
 	for (; i_index < i_nextIndex; i_index++)
 	{
 		if (a_ba_gridArray[i_index] == nullptr)
@@ -1263,7 +1268,7 @@ void InsertGridEntry(Ball* ba_ball)
 			break;
 		}
 	}
-	if (!b_contains)
+	if (!b_contains || v_i_occupied.size() == 0)
 		v_i_occupied.push_back(i_nextIndex - 10);
 }
 
@@ -1585,6 +1590,9 @@ void UniformGridCollisionDetection()
 	{
 		StoreNeighbourCells(&v_i_indices, i);
 
+		if (v_i_indices.size() != 27 && v_i_indices.size() != 18 && v_i_indices.size() != 12 && v_i_indices.size() != 8)
+			std::cout << "Error: wrong indices size\n";
+
 		//Delete empty neighbourCells from v_i_indices
 		for (int k = 0; k < v_i_indices.size(); k++)
 		{
@@ -1608,7 +1616,8 @@ void UniformGridCollisionDetection()
 		int i_iteratorEnd = i_iterator + 10;
 
 		if (v_i_occupied.size() > pow(g_iNumSpheres, 3))
-		{
+		{			
+			std::cout << "Error: more balls stored in grid, than initialized\n -> ball got stored twice\n";
 			PrintGrid(a_ba_gridArray);
 			int xx = 0;
 		}
@@ -1626,7 +1635,7 @@ void UniformGridCollisionDetection()
 				{
 					if (a_ba_gridArray[i_iterator_neighbour] == nullptr)
 						break;
-					else if (i_iterator != i_iterator_neighbour)
+					if (a_ba_gridArray[i_iterator]->id != a_ba_gridArray[i_iterator_neighbour]->id)//else if (i_iterator != i_iterator_neighbour)std::cout << "Same Ball with different gridids\n";
 					{
 						if (XMVectorGetX(XMVector3Length(XMVectorSubtract(a_ba_gridArray[i_iterator]->XMV_position, a_ba_gridArray[i_iterator_neighbour]->XMV_position))) < g_fSphereSize * 2)
 						{
@@ -1692,7 +1701,7 @@ void InitGrid()
 	v_i_occupied.clear();
 
 	f_size = 2 * g_fSphereSize; //size of grid cell
-	i_anz = 1 / (f_size) * 10; //number of cells in a row
+	i_anz = 1 / (f_size)* 10; //number of cells in a row
 	i_lengthGrid = pow(i_anz, 3); //necessary length of array
 
 	a_ba_gridArray = new Ball*[i_lengthGrid];
@@ -2058,7 +2067,10 @@ void DrawBiab(ID3D11DeviceContext* pd3dImmediateContext)
 		XMMATRIX XMM_scale = XMMatrixScaling(g_fSphereSize, g_fSphereSize, g_fSphereSize);
 		XMMATRIX XMM_trans = XMMatrixTranslationFromVector(v_ball[i].XMV_position);
 		XMMATRIX XMM_sphereWorldMatrix = XMM_scale * XMM_trans * g_camera.GetWorldMatrix();
-
+		if (v_ball[i].id == g_iMarkedBall)
+			g_pEffectPositionNormal->SetDiffuseColor(0.6f * XMColorHSVToRGB(XMVectorSet(0.5, 1, 1, 0)));
+		else
+			g_pEffectPositionNormal->SetDiffuseColor(0.6f * XMColorHSVToRGB(XMVectorSet(1, 1, 1, 0)));
 		g_pEffectPositionNormal->SetWorld(XMM_sphereWorldMatrix);
 		g_pSphere->Draw(g_pEffectPositionNormal, g_pInputLayoutPositionNormal);
 	}
@@ -2440,14 +2452,25 @@ void CALLBACK OnFrameMove(double dTime, float fElapsedTime, void* pUserContext)
 				//myTimer.get();
 				//std::cout << "after initGrid\n";
 				//absolutly no clue why the gridIds are getting lost somewehre in the process. this is jsut a work around and of course much slower
-				for (int z = 0; z < v_ball.size(); z++)
-				{
-					if (v_ball[z].i_gridId < 0)
-					{
-						v_i_occupied.clear();
-						InsertGridEntry(&v_ball[z]);
-					}
-				}
+				//for (int z = 0; z < v_ball.size(); z++)
+				//{
+				//	if (v_ball[z].i_gridId < 0)
+				//	{
+				//		v_i_occupied.clear();
+				//		break;
+				//	}
+				//}
+
+				//for (int z = 0; z < v_ball.size(); z++)
+				//{
+				//	if (v_ball[z].i_gridId < 0)
+				//	{
+				//		InsertGridEntry(&v_ball[z]);
+				//	}
+				//}
+
+				debugTime++;
+				std::cout << debugTime << "\n";
 				UniformGridCollisionDetection();
 				//std::cout << "after UniformGridCollisionDetection\n";
 				//std::cout << "Time passed with uniform grid:" << myTimer.update().time << " milliseconds\n";
